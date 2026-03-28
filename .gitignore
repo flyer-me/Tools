@@ -1,0 +1,13 @@
+/.vs/
+/.dotnet/
+/bin/
+/obj/
+/tempbin/
+/tempobj/
+/out/
+
+*.log
+*.user
+*.suo
+
+/ModpackAnalysisReport.txt
