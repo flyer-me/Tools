@@ -6,17 +6,29 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-var options = AnalysisOptions.Parse(args, Environment.CurrentDirectory);
+AnalysisOptions options;
+try
+{
+    options = AnalysisOptions.Parse(args, Environment.CurrentDirectory);
+}
+catch (Exception ex)
+{
+    Console.WriteLine("ERROR: " + ex.Message);
+    PauseIfNeeded(true);
+    return;
+}
 
 if (options.ShowHelp)
 {
     AnalysisOptions.PrintUsage();
+    PauseIfNeeded(options.PauseOnExit);
     return;
 }
 
 if (!Directory.Exists(options.GameDirectory))
 {
     Console.WriteLine("ERROR: game directory does not exist: " + options.GameDirectory);
+    PauseIfNeeded(options.PauseOnExit);
     return;
 }
 
@@ -44,6 +56,7 @@ Console.WriteLine("Analyzing target modpack directories...");
 var reports = options.TargetModpackNames
     .Select(modpackName => AnalyzeModpackDirectory(options.GameDirectory, modpackName, usedZipmodGuids))
     .ToList();
+var totalUnusedSizeBytes = reports.Sum(x => x.UnusedSizeBytes);
 
 var duplicateGuidGroups = reports
     .SelectMany(report => report.Entries)
@@ -100,9 +113,13 @@ foreach (var report in reports)
     Console.WriteLine("Directory: " + report.DisplayName);
     Console.WriteLine("Path: " + report.DirectoryPath);
     Console.WriteLine("Total zipmods: " + report.TotalZipmods);
+    Console.WriteLine("Total size: " + report.TotalSizeBytes + " bytes (" + FormatBytes(report.TotalSizeBytes) + ")");
     Console.WriteLine("Used: " + report.UsedCount);
+    Console.WriteLine("Used size: " + report.UsedSizeBytes + " bytes (" + FormatBytes(report.UsedSizeBytes) + ")");
     Console.WriteLine("Unused: " + report.UnusedCount);
+    Console.WriteLine("Unused size: " + report.UnusedSizeBytes + " bytes (" + FormatBytes(report.UnusedSizeBytes) + ")");
     Console.WriteLine("Invalid: " + report.InvalidCount);
+    Console.WriteLine("Invalid size: " + report.InvalidSizeBytes + " bytes (" + FormatBytes(report.InvalidSizeBytes) + ")");
     if (options.MoveUnused)
     {
         Console.WriteLine("Move planned: " + report.MovePlannedCount);
@@ -111,6 +128,9 @@ foreach (var report in reports)
     }
     Console.WriteLine();
 }
+
+Console.WriteLine("Unused total size: " + totalUnusedSizeBytes + " bytes (" + FormatBytes(totalUnusedSizeBytes) + ")");
+Console.WriteLine();
 
 if (options.MoveUnused)
 {
@@ -125,6 +145,7 @@ if (options.MoveUnused)
 
 Console.WriteLine("Duplicate GUID groups: " + duplicateGuidGroups.Count);
 Console.WriteLine("Report written to: " + options.ReportPath);
+PauseIfNeeded(options.PauseOnExit);
 
 static ScanDirectorySummary ScanPngDirectoryForUsedZipmodGuids(
     string scanDirectory,
@@ -194,6 +215,8 @@ static ModpackDirectoryReport AnalyzeModpackDirectory(
             continue;
 
         report.TotalZipmods++;
+        var fileSizeBytes = TryGetFileSizeBytes(filePath);
+        report.TotalSizeBytes += fileSizeBytes;
 
         try
         {
@@ -206,23 +229,32 @@ static ModpackDirectoryReport AnalyzeModpackDirectory(
                 mod.Version,
                 mod.Name,
                 mod.Author,
+                fileSizeBytes,
                 isUsed,
                 null));
 
             if (isUsed)
+            {
                 report.UsedCount++;
+                report.UsedSizeBytes += fileSizeBytes;
+            }
             else
+            {
                 report.UnusedCount++;
+                report.UnusedSizeBytes += fileSizeBytes;
+            }
         }
         catch (Exception ex)
         {
             report.InvalidCount++;
+            report.InvalidSizeBytes += fileSizeBytes;
             report.Entries.Add(new ModpackEntryReport(
                 filePath,
                 null,
                 null,
                 null,
                 null,
+                fileSizeBytes,
                 false,
                 ex.Message));
         }
@@ -329,6 +361,9 @@ static void WriteReport(
     IEnumerable<IGrouping<string?, ModpackEntryReport>> duplicateGuidGroups,
     MoveSummary moveSummary)
 {
+    var reportList = reports as IList<ModpackDirectoryReport> ?? reports.ToList();
+    var totalUnusedSizeBytes = reportList.Sum(x => x.UnusedSizeBytes);
+
     var reportDirectory = Path.GetDirectoryName(reportPath);
     if (!string.IsNullOrWhiteSpace(reportDirectory))
     {
@@ -353,6 +388,8 @@ static void WriteReport(
         writer.WriteLine("Parsed: " + cardFilesParsed);
         writer.WriteLine("Failed: " + cardFilesFailed);
         writer.WriteLine("Referenced Zipmod GUIDs: " + usedZipmodGuids.Count);
+        writer.WriteLine("Unused Zipmod Total Size Bytes: " + totalUnusedSizeBytes);
+        writer.WriteLine("Unused Zipmod Total Size: " + FormatBytes(totalUnusedSizeBytes));
         writer.WriteLine();
         writer.WriteLine("Scan Sources");
         writer.WriteLine("------------");
@@ -379,15 +416,23 @@ static void WriteReport(
             writer.WriteLine();
         }
 
-        foreach (var report in reports)
+        foreach (var report in reportList)
         {
             writer.WriteLine(report.DisplayName);
             writer.WriteLine(new string('-', report.DisplayName.Length));
             writer.WriteLine("Path: " + report.DirectoryPath);
             writer.WriteLine("TotalZipmods: " + report.TotalZipmods);
+            writer.WriteLine("TotalSizeBytes: " + report.TotalSizeBytes);
+            writer.WriteLine("TotalSize: " + FormatBytes(report.TotalSizeBytes));
             writer.WriteLine("Used: " + report.UsedCount);
+            writer.WriteLine("UsedSizeBytes: " + report.UsedSizeBytes);
+            writer.WriteLine("UsedSize: " + FormatBytes(report.UsedSizeBytes));
             writer.WriteLine("Unused: " + report.UnusedCount);
+            writer.WriteLine("UnusedSizeBytes: " + report.UnusedSizeBytes);
+            writer.WriteLine("UnusedSize: " + FormatBytes(report.UnusedSizeBytes));
             writer.WriteLine("Invalid: " + report.InvalidCount);
+            writer.WriteLine("InvalidSizeBytes: " + report.InvalidSizeBytes);
+            writer.WriteLine("InvalidSize: " + FormatBytes(report.InvalidSizeBytes));
             if (options.MoveUnused)
             {
                 writer.WriteLine("MovePlanned: " + report.MovePlannedCount);
@@ -403,6 +448,8 @@ static void WriteReport(
                 writer.WriteLine("  Author: " + (entry.Author ?? "<unknown>"));
                 writer.WriteLine("  GUID: " + (entry.Guid ?? "<missing>"));
                 writer.WriteLine("  Version: " + (entry.Version ?? "<missing>"));
+                writer.WriteLine("  SizeBytes: " + entry.FileSizeBytes);
+                writer.WriteLine("  Size: " + FormatBytes(entry.FileSizeBytes));
                 writer.WriteLine("  Used: " + entry.IsUsed);
                 if (!string.IsNullOrWhiteSpace(entry.ErrorMessage))
                     writer.WriteLine("  Error: " + entry.ErrorMessage);
@@ -426,6 +473,49 @@ static void WriteReport(
     }
 }
 
+static long TryGetFileSizeBytes(string filePath)
+{
+    try
+    {
+        return new FileInfo(filePath).Length;
+    }
+    catch
+    {
+        return 0L;
+    }
+}
+
+static string FormatBytes(long bytes)
+{
+    if (bytes < 1024)
+        return bytes + " B";
+
+    var size = (double)bytes;
+    var units = new[] { "KB", "MB", "GB", "TB", "PB" };
+    var unitIndex = -1;
+
+    while (size >= 1024 && unitIndex < units.Length - 1)
+    {
+        size /= 1024;
+        unitIndex++;
+    }
+
+    return size.ToString("0.##") + " " + units[unitIndex];
+}
+
+static void PauseIfNeeded(bool pauseOnExit)
+{
+    if (!pauseOnExit || Console.IsOutputRedirected || !Environment.UserInteractive)
+        return;
+
+    if (string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase))
+        return;
+
+    Console.WriteLine();
+    Console.Write("Press Enter to exit...");
+    Console.ReadLine();
+}
+
 internal sealed class AnalysisOptions
 {
     public string GameDirectory { get; private set; } = @"D:\ProgramData\HS2_DXBR_R16";
@@ -437,6 +527,7 @@ internal sealed class AnalysisOptions
     public string ReportPath { get; private set; } = string.Empty;
     public bool MoveUnused { get; private set; }
     public bool DryRun { get; private set; } = true;
+    public bool PauseOnExit { get; private set; } = true;
     public string UnusedOutputRoot { get; private set; } = string.Empty;
     public bool ShowHelp { get; private set; }
 
@@ -481,6 +572,12 @@ internal sealed class AnalysisOptions
                 case "--dry-run":
                     options.DryRun = true;
                     break;
+                case "--no-pause":
+                    options.PauseOnExit = false;
+                    break;
+                case "--pause":
+                    options.PauseOnExit = true;
+                    break;
                 default:
                     throw new ArgumentException("Unknown argument: " + args[i]);
             }
@@ -499,7 +596,7 @@ internal sealed class AnalysisOptions
     public static void PrintUsage()
     {
         Console.WriteLine("Usage:");
-        Console.WriteLine("  ConsoleApp1 [options]");
+        Console.WriteLine("  HS2ModpackAnalyzer [options]");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --game-dir <path>        Game root directory.");
@@ -508,6 +605,8 @@ internal sealed class AnalysisOptions
         Console.WriteLine("  --move-unused            Move unused zipmods to output folder.");
         Console.WriteLine("  --dry-run                Plan move operations without file changes.");
         Console.WriteLine("  --unused-output <path>   Output root for moved/planned unused zipmods.");
+        Console.WriteLine("  --no-pause               Do not wait for Enter before exit.");
+        Console.WriteLine("  --pause                  Wait for Enter before exit (default).");
         Console.WriteLine("  -h, --help               Show this help.");
     }
 
@@ -569,6 +668,10 @@ internal sealed class ModpackDirectoryReport
     public int UsedCount { get; set; }
     public int UnusedCount { get; set; }
     public int InvalidCount { get; set; }
+    public long TotalSizeBytes { get; set; }
+    public long UsedSizeBytes { get; set; }
+    public long UnusedSizeBytes { get; set; }
+    public long InvalidSizeBytes { get; set; }
     public int MovePlannedCount { get; set; }
     public int MovedCount { get; set; }
     public int MoveFailedCount { get; set; }
@@ -583,6 +686,7 @@ internal sealed class ModpackEntryReport
         string? version,
         string? name,
         string? author,
+        long fileSizeBytes,
         bool isUsed,
         string? errorMessage)
     {
@@ -591,6 +695,7 @@ internal sealed class ModpackEntryReport
         Version = version;
         Name = name;
         Author = author;
+        FileSizeBytes = fileSizeBytes;
         IsUsed = isUsed;
         ErrorMessage = errorMessage;
     }
@@ -600,6 +705,7 @@ internal sealed class ModpackEntryReport
     public string? Version { get; private set; }
     public string? Name { get; private set; }
     public string? Author { get; private set; }
+    public long FileSizeBytes { get; private set; }
     public bool IsUsed { get; private set; }
     public string? ErrorMessage { get; private set; }
     public string? Action { get; set; }

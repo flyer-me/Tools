@@ -2,6 +2,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net472</TargetFramework>
+    <AssemblyName>HS2ModpackAnalyzer</AssemblyName>
     <PlatformTarget>x64</PlatformTarget>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -11,6 +12,9 @@
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <CreateSingleFile Condition="'$(CreateSingleFile)' == '' and '$(Configuration)' == 'Release'">true</CreateSingleFile>
+    <SingleFileOutputDir Condition="'$(SingleFileOutputDir)' == ''">$(MSBuildProjectDirectory)\dist\</SingleFileOutputDir>
+    <SingleFileOutputPath Condition="'$(SingleFileOutputPath)' == ''">$(SingleFileOutputDir)$(AssemblyName).exe</SingleFileOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,8 +24,36 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <SingleFileDependency Include="lib\KKManager\*.dll" />
+    <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.44" PrivateAssets="all" />
+  </ItemGroup>
+
   <Target Name="ValidateKkManagerDll" BeforeTargets="ResolveReferences">
     <Error Condition="!Exists('$(MSBuildProjectDirectory)\lib\KKManager\KKManager.Core.dll')"
            Text="Missing dependency: lib\KKManager\KKManager.Core.dll" />
+  </Target>
+
+  <Target Name="CreateSingleFileExecutable" AfterTargets="Build" Condition="'$(CreateSingleFile)' == 'true'">
+    <ItemGroup>
+      <_MergeInput Include="$(OutputPath)$(AssemblyName).exe" />
+      <_MergeInput Include="@(SingleFileDependency->'$(OutputPath)%(Filename)%(Extension)')" Condition="Exists('$(OutputPath)%(Filename)%(Extension)')" />
+    </ItemGroup>
+    <MakeDir Directories="$(SingleFileOutputDir)" />
+    <ILRepack
+      OutputFile="$(SingleFileOutputPath)"
+      InputAssemblies="@(_MergeInput)"
+      Internalize="false"
+      Parallel="true"
+      TargetKind="Exe"
+      Union="true"
+      AllowDuplicateResources="true" />
+  </Target>
+
+  <Target Name="DeploySingleFileToHs2" DependsOnTargets="Build;CreateSingleFileExecutable">
+    <Error Condition="'$(Hs2InstallDir)' == ''" Text="Hs2InstallDir is required. Example: /p:Hs2InstallDir=D:\ProgramData\HS2_DXBR_R16" />
+    <Error Condition="!Exists('$(SingleFileOutputPath)')" Text="Single file executable not found: $(SingleFileOutputPath)" />
+    <Copy SourceFiles="$(SingleFileOutputPath)" DestinationFiles="$(Hs2InstallDir)\$(AssemblyName).exe" />
+    <Message Importance="high" Text="Deployed: $(Hs2InstallDir)\$(AssemblyName).exe" />
   </Target>
 </Project>

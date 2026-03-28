@@ -1,24 +1,27 @@
-# Mod Organizer - Sideloader Analyzer Module
+# HS2 Modpack Analyzer 模块
 
-本目录是 mod 整理项目中的一个独立子模块，用于分析以下目录中的 zipmod 使用情况：
+这个目录是 mod 整理项目中的子模块，用于分析以下目录中的 zipmod 使用情况：
 
 - `Sideloader Modpack`
 - `Sideloader Modpack - Exclusive HS2`
 
-当前实现为纯 DLL 模式，不依赖 KKManager 源码。
+当前实现依赖 KKManager Core。
+
+## 统计结果
+
+程序会输出并写入报告：
+
+- 每个 zipmod 文件大小（`SizeBytes` / 可读大小）
+- 每个目标目录的 `Total/Used/Unused/Invalid` 数量与体积
+- 全部目标目录的 `Unused total size`（未使用 zipmod 总大小）
 
 ## 目录结构
 
-- `Program.cs`：主程序入口与分析逻辑
-- `ConsoleApp1.csproj`：`net472` 控制台项目（x64）
-- `lib/KKManager/`：运行所需的 `KKManager.Core.dll` 及其依赖
-- `ConsoleApp1.slnx`：最小解决方案文件
-
-## 运行环境
-
-- Windows
-- .NET SDK（可构建 `net472`）
-- 游戏目录可访问（默认：`D:\ProgramData\HS2_DXBR_R16`）
+- `Program.cs`：分析程序入口
+- `ConsoleApp1.csproj`：`net472` / `x64` 项目
+- `lib/KKManager/`：`KKManager.Core.dll` 及运行依赖
+- `scripts/deploy-to-hs2.ps1`：单文件打包并部署到 HS2 目录
+- `docs/integration.md`：模块集成说明
 
 ## 构建
 
@@ -34,35 +37,43 @@ dotnet build ConsoleApp1.csproj -p:NuGetAudit=false
 dotnet run --project ConsoleApp1.csproj -- --help
 ```
 
-默认分析（仅统计，不移动文件）：
+默认分析（不移动文件）：
 
 ```powershell
 dotnet run --project ConsoleApp1.csproj -- --dry-run
 ```
 
-指定报告输出：
+默认会在结束时等待回车，方便双击运行时查看结果。  
+如需无暂停运行，请加 `--no-pause`。
+
+## 单文件打包
+
+生成单文件：
 
 ```powershell
-dotnet run --project ConsoleApp1.csproj -- --dry-run --report .\out\reports\analysis.txt
+dotnet build ConsoleApp1.csproj -c Release -p:NuGetAudit=false
 ```
 
-执行实际移动（谨慎使用）：
+输出文件：
+
+- `dist/HS2ModpackAnalyzer.exe`
+
+## 部署到 HS2 安装目录
+
+使用脚本直接部署到默认目录：
 
 ```powershell
-dotnet run --project ConsoleApp1.csproj -- --move-unused
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-to-hs2.ps1
 ```
 
-## 参数说明
+指定安装目录：
 
-- `--game-dir <path>`：游戏根目录
-- `--report <path>`：报告输出路径
-- `--modpack <name>`：目标 modpack 名称（可重复）
-- `--move-unused`：将未使用 zipmod 移动到输出目录
-- `--dry-run`：仅规划，不执行移动
-- `--unused-output <path>`：未使用 zipmod 的输出根目录
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-to-hs2.ps1 -Hs2InstallDir "D:\ProgramData\HS2_DXBR_R16"
+```
 
-## 与主项目集成建议
+也可直接执行 MSBuild 目标：
 
-- 作为主工程的一个子命令或子任务调用。
-- 建议在 CI 中仅跑 `--dry-run`，避免自动修改文件系统。
-- 生产整理流程中，先输出报告、人工确认后再执行 `--move-unused`。
+```powershell
+dotnet msbuild ConsoleApp1.csproj /t:DeploySingleFileToHs2 /p:Configuration=Release /p:Hs2InstallDir="D:\ProgramData\HS2_DXBR_R16"
+```

@@ -5,6 +5,8 @@
 /tempbin/
 /tempobj/
 /out/
+/dist/
+/single/
 
 *.log
 *.user
