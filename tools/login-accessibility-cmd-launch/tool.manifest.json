@@ -1,0 +1,8 @@
+﻿{
+  "toolId": "login-accessibility-cmd-launch",
+  "displayName": "Login Accessibility CMD Launch",
+  "type": "script",
+  "entry": "scripts/登录页面辅助功能调起cmd.bat",
+  "buildCommand": "",
+  "licenseTier": "restricted"
+}

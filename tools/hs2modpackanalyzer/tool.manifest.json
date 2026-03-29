@@ -1,0 +1,8 @@
+﻿{
+  "toolId": "hs2modpackanalyzer",
+  "displayName": "HS2 Modpack Analyzer",
+  "type": "dotnet",
+  "entry": "src/HS2ModpackAnalyzer.csproj",
+  "buildCommand": "dotnet build src/HS2ModpackAnalyzer.csproj -c Release -p:NuGetAudit=false",
+  "licenseTier": "free"
+}

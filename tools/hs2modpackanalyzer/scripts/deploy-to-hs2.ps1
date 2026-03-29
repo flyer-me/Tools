@@ -1,10 +1,10 @@
-param(
+﻿param(
     [string]$Hs2InstallDir = "D:\ProgramData\HS2_DXBR_R16"
 )
 
 $ErrorActionPreference = "Stop"
-$projectRoot = Split-Path -Parent $PSScriptRoot
-$projectFile = Join-Path $projectRoot "ConsoleApp1.csproj"
+$toolRoot = Split-Path -Parent $PSScriptRoot
+$projectFile = Join-Path $toolRoot "src\HS2ModpackAnalyzer.csproj"
 
 dotnet msbuild $projectFile /t:DeploySingleFileToHs2 /p:Configuration=Release /p:Hs2InstallDir="$Hs2InstallDir"
 

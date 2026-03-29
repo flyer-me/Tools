@@ -1,7 +1,7 @@
-<Project>
+﻿<Project>
   <!--
     Intentionally empty.
     Presence of this file disables ILRepack.Lib.MSBuild.Task's default Release target.
-    Single-file merge is handled by ConsoleApp1.csproj target CreateSingleFileExecutable.
+    Single-file merge is handled by HS2ModpackAnalyzer.csproj target CreateSingleFileExecutable.
   -->
 </Project>

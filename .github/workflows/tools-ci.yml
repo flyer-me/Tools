@@ -1,0 +1,53 @@
+﻿name: tools-ci
+
+on:
+  push:
+    branches: [ "**" ]
+    tags: [ "tool/**" ]
+  pull_request:
+
+jobs:
+  validate-and-build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Validate manifests and scripts
+        shell: pwsh
+        run: .\scripts\validate-tools.ps1
+
+      - name: Build dotnet tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $manifests = Get-ChildItem -Path tools -Recurse -File -Filter "tool.manifest.json"
+          foreach ($manifest in $manifests) {
+            $tool = Get-Content $manifest.FullName -Raw | ConvertFrom-Json
+            if ($tool.type -ne "dotnet") { continue }
+
+            $toolDir = Split-Path -Parent $manifest.FullName
+            Push-Location $toolDir
+            try {
+              dotnet restore $tool.entry
+              dotnet build $tool.entry -c Release -p:NuGetAudit=false
+            }
+            finally {
+              Pop-Location
+            }
+          }
+
+      - name: Publish metadata artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-metadata
+          path: |
+            out/tool-index.json
+            tools/**/src/dist/*.exe
+          if-no-files-found: warn

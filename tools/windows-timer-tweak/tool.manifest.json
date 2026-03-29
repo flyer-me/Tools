@@ -1,0 +1,8 @@
+﻿{
+  "toolId": "windows-timer-tweak",
+  "displayName": "Windows Timer Tweak",
+  "type": "script",
+  "entry": "scripts/更改计时器.ps1",
+  "buildCommand": "",
+  "licenseTier": "free"
+}
