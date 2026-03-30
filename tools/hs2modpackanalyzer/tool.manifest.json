@@ -1,4 +1,5 @@
 ﻿{
+  "manifestVersion": "1.0",
   "toolId": "hs2modpackanalyzer",
   "displayName": "HS2 Modpack Analyzer",
   "type": "dotnet",

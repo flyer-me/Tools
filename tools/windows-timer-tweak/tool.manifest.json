@@ -1,4 +1,5 @@
 ﻿{
+  "manifestVersion": "1.0",
   "toolId": "windows-timer-tweak",
   "displayName": "Windows Timer Tweak",
   "type": "script",

@@ -1,0 +1,9 @@
+﻿{
+  "manifestVersion": "1.0",
+  "toolId": "windows-mpo-stability-fix",
+  "displayName": "Windows MPO Stability Fix",
+  "type": "script",
+  "entry": "scripts/disable-mpo.ps1",
+  "buildCommand": "",
+  "licenseTier": "free"
+}

@@ -1,4 +1,5 @@
 ﻿{
+  "manifestVersion": "1.0",
   "toolId": "login-accessibility-cmd-launch",
   "displayName": "Login Accessibility CMD Launch",
   "type": "script",

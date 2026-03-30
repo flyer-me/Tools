@@ -9,6 +9,7 @@
 
 - Every tool must live under `tools/<tool-id>/`.
 - Every tool must include `tool.manifest.json`.
+- Every tool manifest must include `manifestVersion`.
 - Keep tool README and scripts in sync with implementation changes.
 
 ## Validation before PR
