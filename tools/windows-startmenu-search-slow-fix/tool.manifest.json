@@ -1,9 +1,19 @@
 ﻿{
-  "manifestVersion": "1.0",
+  "manifestVersion": "2.0",
   "toolId": "windows-startmenu-search-slow-fix",
   "displayName": "Windows Start Menu/Search Slow Fix",
-  "type": "script",
-  "entry": "scripts/Windows 11 的开始菜单或搜索功能变慢.bat",
-  "buildCommand": "",
-  "licenseTier": "free"
+  "licenseTier": "free",
+  "build": {
+    "kind": "manual"
+  },
+  "runtime": {
+    "kind": "script",
+    "entry": "scripts/Windows 11 的开始菜单或搜索功能变慢.bat"
+  },
+  "artifacts": [
+    {
+      "kind": "script",
+      "pattern": "scripts/*.bat"
+    }
+  ]
 }

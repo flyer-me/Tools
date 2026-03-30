@@ -7,30 +7,29 @@ Use this checklist when handing work to another agent.
 - `git status --short` is clean or intentionally documented.
 - Tool metadata validates:
   - `powershell -ExecutionPolicy Bypass -File .\\scripts\\validate-tools.ps1`
-- For .NET tools, build succeeds at least once in Release.
+- For `build.kind = dotnet-msbuild`, build succeeds at least once in Release.
 
 ## Scope boundaries
 
 - Tools are peers under `tools/`.
-- Do not treat standalone `ps1/bat` tools as sub-assets of other tools.
+- Do not treat standalone scripts as sub-assets of other tools.
 - Keep `toolId` stable once published.
 
 ## Environment requirements
 
-- Windows environment for script tools (`.ps1`, `.bat`, `.cmd`).
-- .NET SDK available for `dotnet` tools.
+- Windows environment for current script tools (`.ps1`, `.bat`, `.cmd`).
+- .NET SDK available for current dotnet tools.
 - Elevated privileges may be required by some system-level tools.
 
 ## Independent New-Tool Flow
 
-Any agent can independently add a new tool by following this sequence:
-
 1. Create `tools/<tool-id>/` and add tool files.
-2. Add `tool.manifest.json` with `manifestVersion: "1.0"`.
-3. Add tool `README.md` with run instructions and `Risk Notice`.
-4. Run `powershell -ExecutionPolicy Bypass -File .\\scripts\\validate-tools.ps1`.
-5. Update root `README.md` tool index.
-6. Record change in `CHANGELOG.md` under `Unreleased`.
+2. Add `tool.manifest.json` with schema `2.0`.
+3. Fill `build/runtime/artifacts` fields completely.
+4. Add tool `README.md` with run instructions and `Risk Notice`.
+5. Run `powershell -ExecutionPolicy Bypass -File .\\scripts\\validate-tools.ps1`.
+6. Update root `README.md` tool index.
+7. Record change in `CHANGELOG.md` under `Unreleased`.
 
 ## Handoff note format
 

@@ -1,9 +1,19 @@
 ﻿{
-  "manifestVersion": "1.0",
+  "manifestVersion": "2.0",
   "toolId": "windows-timer-tweak",
   "displayName": "Windows Timer Tweak",
-  "type": "script",
-  "entry": "scripts/更改计时器.ps1",
-  "buildCommand": "",
-  "licenseTier": "free"
+  "licenseTier": "free",
+  "build": {
+    "kind": "manual"
+  },
+  "runtime": {
+    "kind": "script",
+    "entry": "scripts/更改计时器.ps1"
+  },
+  "artifacts": [
+    {
+      "kind": "script",
+      "pattern": "scripts/*.ps1"
+    }
+  ]
 }

@@ -1,9 +1,19 @@
 ﻿{
-  "manifestVersion": "1.0",
+  "manifestVersion": "2.0",
   "toolId": "login-accessibility-cmd-launch",
   "displayName": "Login Accessibility CMD Launch",
-  "type": "script",
-  "entry": "scripts/登录页面辅助功能调起cmd.bat",
-  "buildCommand": "",
-  "licenseTier": "restricted"
+  "licenseTier": "restricted",
+  "build": {
+    "kind": "manual"
+  },
+  "runtime": {
+    "kind": "script",
+    "entry": "scripts/登录页面辅助功能调起cmd.bat"
+  },
+  "artifacts": [
+    {
+      "kind": "script",
+      "pattern": "scripts/*.bat"
+    }
+  ]
 }

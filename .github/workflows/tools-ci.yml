@@ -1,13 +1,39 @@
 ﻿name: tools-ci
 
 on:
-  push:
-    branches: [ "**" ]
-    tags: [ "tool/**" ]
   pull_request:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "tool/**" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tools-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  validate-and-build:
+  validate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate manifests and scripts
+        shell: pwsh
+        run: .\scripts\validate-tools.ps1
+
+      - name: Upload tool index
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-index
+          path: out/tool-index.json
+          if-no-files-found: error
+
+  build:
+    needs: validate
     runs-on: windows-latest
 
     steps:
@@ -18,35 +44,39 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+          cache: true
 
-      - name: Validate manifests and scripts
-        shell: pwsh
-        run: .\scripts\validate-tools.ps1
-
-      - name: Build dotnet tools
+      - name: Build dotnet-msbuild tools
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $manifests = Get-ChildItem -Path tools -Recurse -File -Filter "tool.manifest.json"
           foreach ($manifest in $manifests) {
             $tool = Get-Content $manifest.FullName -Raw | ConvertFrom-Json
-            if ($tool.type -ne "dotnet") { continue }
+            if ($tool.build.kind -ne "dotnet-msbuild") { continue }
 
             $toolDir = Split-Path -Parent $manifest.FullName
+            $project = [string]$tool.build.project
+            $configuration = if ($tool.build.configuration) { [string]$tool.build.configuration } else { "Release" }
+            $args = @()
+            if ($tool.build.args) {
+              foreach ($arg in $tool.build.args) { $args += [string]$arg }
+            }
+
             Push-Location $toolDir
             try {
-              dotnet restore $tool.entry
-              dotnet build $tool.entry -c Release -p:NuGetAudit=false
+              dotnet restore $project
+              dotnet build $project -c $configuration @args
             }
             finally {
               Pop-Location
             }
           }
 
-      - name: Publish metadata artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tool-metadata
+          name: tool-artifacts
           path: |
             out/tool-index.json
             tools/**/src/dist/*.exe

@@ -1,9 +1,24 @@
 ﻿{
-  "manifestVersion": "1.0",
+  "manifestVersion": "2.0",
   "toolId": "hs2modpackanalyzer",
   "displayName": "HS2 Modpack Analyzer",
-  "type": "dotnet",
-  "entry": "src/HS2ModpackAnalyzer.csproj",
-  "buildCommand": "dotnet build src/HS2ModpackAnalyzer.csproj -c Release -p:NuGetAudit=false",
-  "licenseTier": "free"
+  "licenseTier": "free",
+  "build": {
+    "kind": "dotnet-msbuild",
+    "project": "src/HS2ModpackAnalyzer.csproj",
+    "configuration": "Release",
+    "args": [
+      "-p:NuGetAudit=false"
+    ]
+  },
+  "runtime": {
+    "kind": "exe",
+    "entry": "src/dist/HS2ModpackAnalyzer.exe"
+  },
+  "artifacts": [
+    {
+      "kind": "exe",
+      "pattern": "src/dist/*.exe"
+    }
+  ]
 }

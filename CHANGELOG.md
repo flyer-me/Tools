@@ -9,8 +9,10 @@ All notable changes to this repository will be documented in this file.
 - Added new script tool `windows-mpo-stability-fix` to disable MPO by setting `OverlayTestMode=5` and provide restore/status scripts.
 
 ### Changed
-- Enforced `manifestVersion` in all tool manifests.
-- Extended `scripts/validate-tools.ps1` with manifest-version checks and basic `bat/cmd` validation.
+- Upgraded tool manifest schema to `2.0` with `build/runtime/artifacts` model.
+- Removed reliance on legacy `type`-only modeling for CI and validation.
+- Extended `scripts/validate-tools.ps1` to enforce schema `2.0` strictly.
+- Updated CI workflow to mainstream split pipeline (`validate` -> `build`) with least privilege and dotnet cache.
 - Added risky-command warnings for privileged batch operations.
 
 ## [0.1.0] - 2026-03-29

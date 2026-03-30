@@ -8,8 +8,8 @@
 ## Tool requirements
 
 - Every tool must live under `tools/<tool-id>/`.
-- Every tool must include `tool.manifest.json`.
-- Every tool manifest must include `manifestVersion`.
+- Every tool must include `tool.manifest.json` and follow schema `2.0`.
+- Use `build/runtime/artifacts` model, not legacy type grouping.
 - Keep tool README and scripts in sync with implementation changes.
 
 ## Validation before PR

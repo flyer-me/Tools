@@ -1,30 +1,70 @@
 ﻿# Tool Manifest Schema
 
-Current schema version: `1.0`
+Current schema version: `2.0`
 
 ## Required fields
 
-- `manifestVersion`: string, must be `1.0`
+- `manifestVersion`: string, must be `2.0`
 - `toolId`: stable lowercase id, kebab-case
 - `displayName`: human-readable name
-- `type`: `dotnet` or `script`
-- `entry`: path relative to tool directory
-- `licenseTier`: `free` or `restricted` (or future approved tiers)
+- `licenseTier`: `free` / `restricted` / future approved tiers
+- `build`: object with `kind`
+- `runtime`: object with `kind` and `entry`
+- `artifacts`: non-empty array, each item includes `kind` and `pattern`
 
-## Optional fields
+## Build model
 
-- `buildCommand`: string; empty for script-only tools
+Supported `build.kind` values:
+
+- `dotnet-msbuild`
+- `powershell`
+- `batch`
+- `node`
+- `python`
+- `go`
+- `rust`
+- `manual`
+
+For `dotnet-msbuild`, `build.project` is required.
+Optional fields:
+
+- `build.configuration` (default in CI: `Release`)
+- `build.args` (array of extra arguments)
+
+## Runtime model
+
+Supported `runtime.kind` values:
+
+- `script`
+- `exe`
+- `container`
+- `library`
+
+`runtime.entry` is always required.
 
 ## Example
 
 ```json
 {
-  "manifestVersion": "1.0",
+  "manifestVersion": "2.0",
   "toolId": "hs2modpackanalyzer",
   "displayName": "HS2 Modpack Analyzer",
-  "type": "dotnet",
-  "entry": "src/HS2ModpackAnalyzer.csproj",
-  "buildCommand": "dotnet build src/HS2ModpackAnalyzer.csproj -c Release -p:NuGetAudit=false",
-  "licenseTier": "free"
+  "licenseTier": "free",
+  "build": {
+    "kind": "dotnet-msbuild",
+    "project": "src/HS2ModpackAnalyzer.csproj",
+    "configuration": "Release",
+    "args": ["-p:NuGetAudit=false"]
+  },
+  "runtime": {
+    "kind": "exe",
+    "entry": "src/dist/HS2ModpackAnalyzer.exe"
+  },
+  "artifacts": [
+    {
+      "kind": "exe",
+      "pattern": "src/dist/*.exe"
+    }
+  ]
 }
 ```
