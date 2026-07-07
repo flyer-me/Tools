@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<ModpackToolConfiguration>
+  <IngestFolder>E:\test\in</IngestFolder>
+  <OutputFolder>E:\test</OutputFolder>
+  <TestGameFolder>F:\Games\KKS\</TestGameFolder>
+  <FailFolder>E:\test</FailFolder>
+  <BackupFolder>E:\test\b</BackupFolder>
+  <LooseFilesFolder>E:\test\b</LooseFilesFolder>
+  <Game1Short />
+  <Game1Longs />
+  <Game2Short />
+  <Game2Longs />
+  <Game3Short />
+  <Game3Longs />
+  <GameOutputSubfolder>Sideloader Modpack - Exclusive</GameOutputSubfolder>
+  <CompressPNGs>True</CompressPNGs>
+  <RandomizeCABs>True</RandomizeCABs>
+  <ContentPolicies>
+    <ContentPolicy Kind="Unknown" OutputSubfolder="" CanCompress="True" NeverPutInsideGameSpecific="False" />
+    <ContentPolicy Kind="MapFreeH" OutputSubfolder="" CanCompress="True" NeverPutInsideGameSpecific="False" />
+    <ContentPolicy Kind="MapStudio" OutputSubfolder="" CanCompress="True" NeverPutInsideGameSpecific="False" />
+    <ContentPolicy Kind="AnimationFreeH" OutputSubfolder="" CanCompress="True" NeverPutInsideGameSpecific="False" />
+    <ContentPolicy Kind="AnimationStudio" OutputSubfolder="" CanCompress="True" NeverPutInsideGameSpecific="False" />
+    <ContentPolicy Kind="Studio" OutputSubfolder="" CanCompress="True" NeverPutInsideGameSpecific="False" />
+    <ContentPolicy Kind="Character" OutputSubfolder="" CanCompress="True" NeverPutInsideGameSpecific="False" />
+    <ContentPolicy Kind="UncensorSelector" OutputSubfolder="" CanCompress="True" NeverPutInsideGameSpecific="False" />
+    <ContentPolicy Kind="MaterialEditor" OutputSubfolder="" CanCompress="True" NeverPutInsideGameSpecific="False" />
+  </ContentPolicies>
+</ModpackToolConfiguration>
