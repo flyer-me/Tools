@@ -1,0 +1,19 @@
+{
+  "manifestVersion": "2.0",
+  "toolId": "windows-remove-org-restrictions",
+  "displayName": "Windows Remove Organization Restrictions",
+  "licenseTier": "free",
+  "build": {
+    "kind": "manual"
+  },
+  "runtime": {
+    "kind": "script",
+    "entry": "scripts/Remove-OrgRestrictions.ps1"
+  },
+  "artifacts": [
+    {
+      "kind": "script",
+      "pattern": "scripts/*.ps1"
+    }
+  ]
+}
