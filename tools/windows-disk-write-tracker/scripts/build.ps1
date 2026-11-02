@@ -129,7 +129,7 @@ function Resolve-Dotnet {
     $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
 
-    throw '找不到 dotnet。请先运行 tools\bootstrap-sdk.ps1 安装 SDK。'
+    throw '找不到 dotnet。请先运行 scripts\bootstrap-sdk.ps1 安装 SDK。'
 }
 
 $dotnet = Resolve-Dotnet -Root $DotnetRoot
@@ -137,7 +137,7 @@ Write-Host "dotnet : $dotnet"
 
 $sdks = & $dotnet --list-sdks
 if (-not $sdks) {
-    throw "该 dotnet 没有任何 SDK。请运行 tools\bootstrap-sdk.ps1。"
+    throw "该 dotnet 没有任何 SDK。请运行 scripts\bootstrap-sdk.ps1。"
 }
 Write-Host "SDK    : $($sdks -join '; ')"
 
@@ -159,6 +159,8 @@ if ($LASTEXITCODE -ne 0) { throw 'build 失败' }
 if (-not $SkipTests) {
     Write-Host ''
     Write-Host '--- test ---'
+    # tests\ 目前只有手工验证用的 fixture，没有测试项目，所以这里必然走 else。
+    # 分支保留：将来加了 csproj 就会自动纳入，而不是被静默跳过。
     $testProjects = Get-ChildItem -Path (Join-Path $repoRoot 'tests') -Filter '*.csproj' -Recurse -ErrorAction SilentlyContinue
     if ($testProjects) {
         & $dotnet test DiskWriteTracker.sln -c $Configuration --no-build -v minimal

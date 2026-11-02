@@ -1,4 +1,4 @@
-# HS2 Missing Mods Downloader / HS2 缺失模组补全工具
+﻿# HS2 Missing Mods Downloader / HS2 缺失模组补全工具
 
 基于 [ModResolver](https://github.com/XrmSeries/ModResolver/releases) 扫描报告，从 BetterRepack CDN 下载缺失的 `.zipmod` 模组文件。
 
@@ -68,11 +68,11 @@ download_missing_mods.exe --help           # 完整帮助
 ## 开发 / Development
 
 ```
-Download_Missing_Mods/
+hs2-missing-mods-downloader/
 ├── src/
 │   └── download_missing_mods.py   # 源码 (Python 3.8+, stdlib only)
 ├── dist/
-│   ├── download_missing_mods.exe  # 预构建独立 exe
+│   ├── download_missing_mods.exe  # 构建产物，不随仓库分发
 │   └── download_missing_mods.bat  # 启动器 (优先 exe，回退 py)
 ├── setup.bat                      # 一键安装脚本
 ├── build_exe.bat                  # 从源码重新构建 exe
@@ -80,6 +80,15 @@ Download_Missing_Mods/
 ```
 
 **重新构建 exe**：安装 Python + `pip install pyinstaller`，运行 `build_exe.bat`。
+
+---
+
+## 风险提示 / Risk Notice
+
+- `setup.bat` 会从 GitHub 下载 ModResolver 便携包并解压到当前目录。来源是第三方仓库，版本与内容不由本仓库控制。
+- 工具会把缺失的 `.zipmod` 从 BetterRepack CDN 直接写入 ModResolver 所在目录；已存在的文件不会被删除或覆盖。
+- 下载内容不做签名校验。`.zipmod` 是可被游戏加载的压缩包，请只在可信网络环境下使用。
+- 不修改注册表、不要求管理员权限。
 
 ---
 

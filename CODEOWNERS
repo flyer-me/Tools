@@ -1,2 +1,10 @@
-﻿# Update owner to your GitHub user/team/email.
-* tools@example.com
+# GitHub 只在 CODEOWNERS、.github/CODEOWNERS、docs/CODEOWNERS 里读这个文件。
+# 放在仓库根是被识别的，不要挪进 .github/workflows。
+
+# 默认所有权。加新工具不必改这里；某个工具需要别人负责时，
+# 在下面追加一条更具体的规则覆盖默认值。
+* @flyer-me
+
+# 发布链路与护栏：改一处会影响全部工具，值得单独看
+/.github/workflows/ @flyer-me
+/scripts/ @flyer-me

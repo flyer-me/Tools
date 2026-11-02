@@ -11,6 +11,23 @@ $supportedScriptExtensions = @(".ps1", ".bat", ".cmd")
 # licenseTier 说的是授权，risk 说的是这台机器被改动的程度，两者不能互相顶替。
 $supportedRiskLevels = @("low", "elevated")
 
+# "这台机器被改了"的强信号，不是完整的危险命令库。
+# 刻意不收 format / Remove-Item 这类词：它们在没有上下文时误报太多，
+# 一个总在报警的检查很快就会被无视。
+$riskyCommandPatterns = @(
+    "hklm:",
+    "hkey_local_machine",
+    "bcdedit",
+    "reg add ",
+    "reg delete",
+    "diskpart",
+    "utilman.exe",
+    "takeown ",
+    "icacls ",
+    "sc config ",
+    "shutdown /r"
+)
+
 if (-not (Test-Path $toolsRoot -PathType Container)) {
     throw "Missing tools directory: $toolsRoot"
 }
@@ -214,24 +231,71 @@ foreach ($toolDirInfo in $toolDirs) {
             if (-not $commandLines -or $commandLines.Count -eq 0) {
                 $errors.Add("$($manifestPath): batch entry '$runtimeEntry' has no executable command lines")
             }
+        }
+    }
 
-            $riskyPatterns = @(
-                "format ",
-                "diskpart",
-                "reg delete",
-                "bcdedit ",
-                "move c:\windows\system32\utilman.exe",
-                "copy c:\windows\system32\cmd.exe c:\windows\system32\utilman.exe"
-            )
-            foreach ($line in $commandLines) {
-                $normalized = $line.ToLowerInvariant()
-                foreach ($pattern in $riskyPatterns) {
-                    if ($normalized.Contains($pattern)) {
-                        Write-Warning "$($manifestPath): risky batch command detected '$line'"
+    # 危险操作扫描必须和 risk 声明对得上。声明 low 却在改 HKLM、改启动配置、
+    # 替换系统二进制 —— 不是声明写错了，就是代码写错了，两种都得停下来看。
+    # 声明 elevated 的，README 必须把风险写在用户眼前，不能只藏在脚本里。
+    $scanTargets = New-Object System.Collections.Generic.List[string]
+    if ($runtimeKind -eq "script" -and $runtimeEntryPath -and (Test-Path -LiteralPath $runtimeEntryPath -PathType Leaf)) {
+        $scanTargets.Add($runtimeEntryPath)
+    }
+    $scriptsDir = Join-Path $toolDir "scripts"
+    if (Test-Path -LiteralPath $scriptsDir -PathType Container) {
+        foreach ($scriptFile in (Get-ChildItem -LiteralPath $scriptsDir -Recurse -File -ErrorAction SilentlyContinue)) {
+            if ($scriptFile.Extension.ToLowerInvariant() -in @(".ps1", ".bat", ".cmd")) {
+                $scanTargets.Add($scriptFile.FullName)
+            }
+        }
+    }
+
+    $riskyHits = New-Object System.Collections.Generic.List[string]
+    foreach ($target in ($scanTargets | Select-Object -Unique)) {
+        $lineNumber = 0
+        foreach ($line in (Get-Content -LiteralPath $target -ErrorAction SilentlyContinue)) {
+            $lineNumber++
+            $trimmed = $line.Trim()
+            if ($trimmed -eq "" -or $trimmed.StartsWith("::") -or $trimmed.StartsWith("#")) { continue }
+            if ($trimmed.StartsWith("rem ", [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+            if ($trimmed.StartsWith("@rem ", [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+
+            $normalized = $line.ToLowerInvariant()
+            foreach ($pattern in $riskyCommandPatterns) {
+                if ($normalized.Contains($pattern)) {
+                    $relative = if ($target.StartsWith($toolDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $target.Substring($toolDir.Length + 1)
                     }
+                    else { Split-Path -Leaf $target }
+                    $riskyHits.Add(("{0}:{1} {2}" -f $relative, $lineNumber, $trimmed))
+                    break
                 }
             }
         }
+    }
+
+    if ($riskLevel -eq "elevated") {
+        $readmePath = Join-Path $toolDir "README.md"
+        if (-not (Test-Path -LiteralPath $readmePath -PathType Leaf)) {
+            $errors.Add("$($manifestPath): risk 'elevated' requires README.md with a '## Risk Notice' section")
+        }
+        else {
+            $readmeText = Get-Content -LiteralPath $readmePath -Raw
+            if ($readmeText -notmatch '(?m)^##\s+Risk Notice\s*$') {
+                $errors.Add("$($manifestPath): risk 'elevated' requires a '## Risk Notice' section in README.md")
+            }
+        }
+        # elevated 工具命中这些是它的本职，不需要逐条刷屏；只报"确认过了"。
+        if ($riskyHits.Count -gt 0) {
+            $fileCount = ($riskyHits | ForEach-Object { ($_ -split ':')[0] } | Select-Object -Unique).Count
+            Write-Host ("  [elevated] {0}: {1} privileged operation(s) in {2} file(s)" -f $tool.toolId, $riskyHits.Count, $fileCount)
+        }
+    }
+    elseif ($riskyHits.Count -gt 0) {
+        foreach ($hit in $riskyHits) {
+            $errors.Add("$($manifestPath): declared risk 'low' but contains a privileged operation -> $hit")
+        }
+        $errors.Add("$($manifestPath): either remove the operation or raise risk to 'elevated' and document it")
     }
 
     if (-not ($tool.artifacts -is [System.Array]) -or $tool.artifacts.Count -eq 0) {

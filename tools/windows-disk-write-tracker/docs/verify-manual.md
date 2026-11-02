@@ -1,6 +1,6 @@
-# 人工验收清单
+﻿# 人工验收清单
 
-`tools\verify.ps1` 覆盖的是**能自动化**的部分：产物形态、命令行契约、日增量算法、
+`scripts\verify.ps1` 覆盖的是**能自动化**的部分：产物形态、命令行契约、日增量算法、
 报表自包含、CSV 编码、并发写锁、计划任务 dry-run。
 
 下面这些必须在真终端里用人眼确认，因为它们的判定依据是「窗口弹出来了没有」「浏览器里点了有没有反应」，
@@ -8,8 +8,8 @@
 
 ## 前置条件
 
-1. 已跑过 `tools\build.ps1`，`dist\` 里有 `DiskWriteTracker.exe` / `README.txt` / `data`。
-2. 在**资源管理器里双击** `dist\DiskWriteTracker.exe`（不要在已重定向输出的终端里跑，
+1. 已跑过 `scripts\build.ps1`，`src\dist\` 里有 `DiskWriteTracker.exe` / `README.txt` / `data`。
+2. 在**资源管理器里双击** `src\dist\DiskWriteTracker.exe`（不要在已重定向输出的终端里跑，
    那样会按设计退回打印帮助文本）。
 3. 全程用**普通权限**账户，只有第 5 项需要管理员授权。
 
@@ -127,7 +127,7 @@
 
 **步骤**：输入 `6` 回车。
 
-**预期**：资源管理器打开 `dist\data`，里面能看到 `samples-*.jsonl`、`exports\`、`logs\`、
+**预期**：资源管理器打开 `src\dist\data`，里面能看到 `samples-*.jsonl`、`exports\`、`logs\`、
 `settings.json`，**看不到** `.write.lock`（隐藏属性生效）。
 
 **失败判据**：目录没打开；或 `.write.lock` 明晃晃列在那里。
@@ -156,7 +156,7 @@
 
 ## 11. 整个文件夹搬走
 
-**步骤**：把 `dist` 整个文件夹复制到 U 盘或另一个路径，双击里面的 exe。
+**步骤**：把 `src\dist` 整个文件夹复制到 U 盘或另一个路径，双击里面的 exe。
 
 **预期**：
 - 数据目录指向新位置下的 `data`，标记仍为 `[便携]`。

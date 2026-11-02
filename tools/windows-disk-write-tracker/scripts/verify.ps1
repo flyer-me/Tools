@@ -1,5 +1,5 @@
 ﻿# DiskWriteTracker 验收断言
-# 用法：powershell -ExecutionPolicy Bypass -File tools\verify.ps1
+# 用法：powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
 # 全部通过返回 0，任一失败抛错并返回 1。
 # 编码要求：UTF-8 带 BOM，CRLF（PS 5.1 无 BOM 会解析坏中文）。
 
@@ -14,7 +14,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($Dist)) { $Dist = Join-Path $repoRoot 'src\dist' }
 
 $exe = Join-Path $Dist 'DiskWriteTracker.exe'
-if (-not (Test-Path $exe)) { throw "找不到 $exe，请先运行 tools\build.ps1" }
+if (-not (Test-Path $exe)) { throw "找不到 $exe，请先运行 scripts\build.ps1" }
 
 $fixtures = Join-Path $repoRoot 'tests\fixtures\data'
 $work = Join-Path $env:TEMP ('dwt-verify-' + [guid]::NewGuid().ToString('N'))

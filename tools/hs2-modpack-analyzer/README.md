@@ -22,6 +22,12 @@ dotnet build .\\src\\HS2ModpackAnalyzer.csproj -c Release -p:NuGetAudit=false
 dotnet run --project .\\src\\HS2ModpackAnalyzer.csproj -- --help
 ```
 
+## Risk Notice
+
+Read-only with respect to the game installation: the tool walks the modpack
+directory, reads archive metadata, and writes a report. It does not modify, move, or
+delete modpack files. No administrator rights and no registry access are required.
+
 ## Deploy single-file build to HS2 directory
 
 ```powershell
