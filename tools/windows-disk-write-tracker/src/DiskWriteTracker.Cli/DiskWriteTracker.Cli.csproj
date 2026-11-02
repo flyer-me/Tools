@@ -44,11 +44,14 @@
 
     <Error Condition="!Exists('$(_PublishRoot)$(AssemblyName).exe')"
            Text="publish 未产出 $(_PublishRoot)$(AssemblyName).exe" />
+    <!-- README.txt 是分发包的一部分，缺了要显式失败，不能靠 Condition 静默跳过 -->
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\..\..\assets\README.txt')"
+           Text="缺少 assets\README.txt：它是分发包的一部分" />
 
     <Copy SourceFiles="$(_PublishRoot)$(AssemblyName).exe" DestinationFolder="$(_DistDir)" />
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\assets\README.txt"
-          DestinationFiles="$(_DistDir)README.txt"
-          Condition="Exists('$(MSBuildProjectDirectory)\..\assets\README.txt')" />
+    <!-- 项目在 src\ 下，assets\ 在工具根，所以要上跳两级 -->
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\assets\README.txt"
+          DestinationFiles="$(_DistDir)README.txt" />
   </Target>
 
 </Project>

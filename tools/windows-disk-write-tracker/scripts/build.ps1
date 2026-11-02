@@ -235,18 +235,10 @@ foreach ($dir in @($distLauncher, $distConfig, (Join-Path $dist 'exports'))) {
     }
 }
 
-# 4) 用户资产只有一份说明
-$readmeSrc = Join-Path $repoRoot 'assets\README.txt'
-if (Test-Path -LiteralPath $readmeSrc) {
-    Copy-Item $readmeSrc -Destination (Join-Path $dist 'README.txt') -Force
-}
+# 4) README.txt 与 data\ 由 csproj 的 StageDist target 生成，这里不再重复拷贝。
+#    两处都做会造成「两处真源」，而 StageDist 那份才是 CI 也会走的那条路径。
 
-# 5) data 目录存在即触发引擎的便携模式：计划任务与菜单都落这里
-if (-not (Test-Path -LiteralPath $distData)) {
-    New-Item -ItemType Directory -Path $distData -Force | Out-Null
-}
-
-# 6) 形态断言：多一个条目都算失败，避免技术文件悄悄回流
+# 5) 形态断言：多一个条目都算失败，避免技术文件悄悄回流
 $expected = @('DiskWriteTracker.exe', 'README.txt', 'data')
 $actual = @(Get-ChildItem -LiteralPath $dist -Force | ForEach-Object { $_.Name })
 $extra = @($actual | Where-Object { $expected -notcontains $_ })
