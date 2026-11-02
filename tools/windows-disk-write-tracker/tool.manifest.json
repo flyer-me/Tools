@@ -20,6 +20,10 @@
     {
       "kind": "doc",
       "pattern": "src/dist/README.txt"
+    },
+    {
+      "kind": "dir",
+      "pattern": "src/dist/data"
     }
   ]
 }

@@ -3,8 +3,9 @@
 on:
   pull_request:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "master" ]
     tags: [ "tool/**" ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -79,11 +80,13 @@ jobs:
         shell: pwsh
         run: .\scripts\assert-artifacts.ps1
 
-      - name: Upload build artifacts
+      - name: Package tools
+        shell: pwsh
+        run: .\scripts\package-tool.ps1 -Version "0.0.0-ci.${{ github.run_number }}"
+
+      - name: Upload tool packages
         uses: actions/upload-artifact@v4
         with:
-          name: tool-artifacts
-          path: |
-            out/tool-index.json
-            tools/**/src/dist/*.exe
-          if-no-files-found: warn
+          name: tool-packages
+          path: out/packages/*
+          if-no-files-found: error
