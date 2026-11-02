@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3EC909D2-99DD-46CF-B79A-A8C2CF893FA9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DiskWriteTracker.Core", "src\DiskWriteTracker.Core\DiskWriteTracker.Core.csproj", "{0A938386-7AB0-470F-B2AC-FC4E7A8B8CD1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DiskWriteTracker.Cli", "src\DiskWriteTracker.Cli\DiskWriteTracker.Cli.csproj", "{08CEA876-FEA5-45F9-BACF-2314F200BDC2}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0A938386-7AB0-470F-B2AC-FC4E7A8B8CD1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0A938386-7AB0-470F-B2AC-FC4E7A8B8CD1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0A938386-7AB0-470F-B2AC-FC4E7A8B8CD1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0A938386-7AB0-470F-B2AC-FC4E7A8B8CD1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{08CEA876-FEA5-45F9-BACF-2314F200BDC2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{08CEA876-FEA5-45F9-BACF-2314F200BDC2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{08CEA876-FEA5-45F9-BACF-2314F200BDC2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{08CEA876-FEA5-45F9-BACF-2314F200BDC2}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{0A938386-7AB0-470F-B2AC-FC4E7A8B8CD1} = {3EC909D2-99DD-46CF-B79A-A8C2CF893FA9}
+		{08CEA876-FEA5-45F9-BACF-2314F200BDC2} = {3EC909D2-99DD-46CF-B79A-A8C2CF893FA9}
+	EndGlobalSection
+EndGlobal

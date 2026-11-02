@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DiskWriteTracker.Cli</RootNamespace>
+    <AssemblyName>DiskWriteTracker</AssemblyName>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiskWriteTracker.Core\DiskWriteTracker.Core.csproj" />
+  </ItemGroup>
+
+</Project>

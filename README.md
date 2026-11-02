@@ -8,6 +8,7 @@ All tools are stored under `tools/<tool-id>/` and discovered by `tools/*/tool.ma
 | Tool ID | Runtime | Build | Status | Path |
 |---|---|---|---|---|
 | `hs2modpackanalyzer` | `exe` | `dotnet-msbuild` | Active | `tools/hs2modpackanalyzer` |
+| `windows-disk-write-tracker` | `exe` | `dotnet-msbuild` | Active | `tools/windows-disk-write-tracker` |
 | `windows-startmenu-search-slow-fix` | `script` | `manual` | Active | `tools/windows-startmenu-search-slow-fix` |
 | `windows-timer-tweak` | `script` | `manual` | Active | `tools/windows-timer-tweak` |
 | `login-accessibility-cmd-launch` | `script` | `manual` | Active | `tools/login-accessibility-cmd-launch` |

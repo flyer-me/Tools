@@ -5,6 +5,7 @@ All notable changes to this repository will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Added `windows-disk-write-tracker`: reads cumulative bytes written from NVMe/SATA firmware through storage IOCTLs, records a daily delta, and exports an offline HTML report plus CSV.
 - Added handoff documentation: manifest schema, agent checklist, release runbook, and script risk policy.
 - Added new script tool `windows-mpo-stability-fix` to disable MPO by setting `OverlayTestMode=5` and provide restore/status scripts.
 

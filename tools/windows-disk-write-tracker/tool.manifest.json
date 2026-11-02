@@ -1,0 +1,25 @@
+﻿{
+  "manifestVersion": "2.0",
+  "toolId": "windows-disk-write-tracker",
+  "displayName": "Disk Write Tracker",
+  "licenseTier": "free",
+  "build": {
+    "kind": "dotnet-msbuild",
+    "project": "src/DiskWriteTracker.Cli/DiskWriteTracker.Cli.csproj",
+    "configuration": "Release"
+  },
+  "runtime": {
+    "kind": "exe",
+    "entry": "src/dist/DiskWriteTracker.exe"
+  },
+  "artifacts": [
+    {
+      "kind": "exe",
+      "pattern": "src/dist/*.exe"
+    },
+    {
+      "kind": "doc",
+      "pattern": "src/dist/README.txt"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "data": {
+    "directory": "%ProgramData%\\DiskWriteTracker",
+    "fallbackDirectory": "%LOCALAPPDATA%\\DiskWriteTracker",
+    "retentionDays": 3650
+  },
+  "sampling": {
+    "dailyTime": "00:05",
+    "timeoutSeconds": 30,
+    "maxConcurrency": 4
+  },
+  "units": {
+    "sataLbaBytes": 512,
+    "nvmeDataUnitBytes": 512000,
+    "requireWearGate": true
+  },
+  "calibration": {
+    "probeSizeMb": 2048,
+    "maxProbeSizeMb": 4096
+  },
+  "attribution": {
+    "enabled": false,
+    "note": "软件归因属参考值，永远不得混入硬件总量"
+  },
+  "logging": {
+    "level": "INFO",
+    "keepRawPayloadDays": 30
+  },
+  "telemetry": {
+    "enabled": false,
+    "note": "本工具不联网、不上传任何数据"
+  }
+}

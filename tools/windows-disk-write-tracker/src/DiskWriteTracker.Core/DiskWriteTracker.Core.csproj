@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- M1 刻意保持零 PackageReference：仅用 BCL + Win32 P/Invoke。
+       引入任何 NuGet 前请先更新 plan 的依赖矩阵。 -->
+
+  <PropertyGroup>
+    <RootNamespace>DiskWriteTracker.Core</RootNamespace>
+    <AssemblyName>DiskWriteTracker.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Scheduling\schedule.ps1" />
+    <EmbeddedResource Include="Export\Report\report.css" LogicalName="report.css" />
+    <EmbeddedResource Include="Export\Report\report.js" LogicalName="report.js" />
+    <!-- 程序配置随程序发布，最终用户目录里不再需要 config 文件夹；外部同名文件存在时仍可覆盖 -->
+    <EmbeddedResource Include="..\..\config\default.json" LogicalName="default.json" />
+  </ItemGroup>
+
+</Project>
