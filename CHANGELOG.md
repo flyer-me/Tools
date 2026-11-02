@@ -31,7 +31,8 @@ All notable changes to this repository will be documented in this file.
 - `CODEOWNERS` names a real owner instead of `tools@example.com`.
 - Fixed stale `tools\` paths in the disk-write-tracker docs and scripts: the scripts live in `scripts\` and output in `src\dist\` since the layout move.
 - Extended `scripts/validate-tools.ps1` to enforce the schema strictly.
-- Updated CI workflow to mainstream split pipeline (`validate` -> `build`) with least privilege and dotnet cache.
+- Updated CI workflow to mainstream split pipeline (`validate` -> `build`) with least privilege.
+- Disabled `setup-dotnet` package caching: it requires `packages.lock.json`, and this repo restores without a lock file, so the step failed before anything was built. Caching comes back when lock files do.
 - Added risky-command warnings for privileged batch operations.
 
 ### Removed
