@@ -7,6 +7,8 @@ Use this checklist when handing work to another agent.
 - `git status --short` is clean or intentionally documented.
 - Tool metadata validates:
   - `powershell -ExecutionPolicy Bypass -File .\\scripts\\validate-tools.ps1`
+- For non-`manual` tools, declared artifacts exist after a build:
+  - `powershell -ExecutionPolicy Bypass -File .\\scripts\\assert-artifacts.ps1`
 - For `build.kind = dotnet-msbuild`, build succeeds at least once in Release.
 
 ## Scope boundaries
@@ -24,12 +26,13 @@ Use this checklist when handing work to another agent.
 ## Independent New-Tool Flow
 
 1. Create `tools/<tool-id>/` and add tool files.
-2. Add `tool.manifest.json` with schema `2.0`.
+2. Add `tool.manifest.json` with schema `2.1`.
 3. Fill `build/runtime/artifacts` fields completely.
 4. Add tool `README.md` with run instructions and `Risk Notice`.
 5. Run `powershell -ExecutionPolicy Bypass -File .\\scripts\\validate-tools.ps1`.
-6. Update root `README.md` tool index.
-7. Record change in `CHANGELOG.md` under `Unreleased`.
+6. Build the tool, then run `.\\scripts\\assert-artifacts.ps1` to confirm the declared outputs exist.
+7. Update root `README.md` tool index.
+8. Record change in `CHANGELOG.md` under `Unreleased`.
 
 ## Handoff note format
 

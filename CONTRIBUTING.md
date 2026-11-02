@@ -17,3 +17,10 @@
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\\scripts\\validate-tools.ps1
 ```
+
+If you changed anything under `artifacts` or the build pipeline, also run a build
+and assert the declared outputs exist:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\\scripts\\assert-artifacts.ps1
+```

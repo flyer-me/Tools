@@ -24,12 +24,16 @@ All tools are stored under `tools/<tool-id>/` and discovered by `tools/*/tool.ma
 
 ## Quick Validation
 
-```powershell
-Get-ChildItem tools -Recurse -Filter tool.manifest.json
-```
+Static check — no SDK needed, runs on a clean clone:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\\scripts\\validate-tools.ps1
+```
+
+After a build — asserts every declared artifact actually exists:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\\scripts\\assert-artifacts.ps1
 ```
 
 ## Handoff Docs

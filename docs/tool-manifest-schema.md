@@ -1,11 +1,11 @@
 ﻿# Tool Manifest Schema
 
-Current schema version: `2.0`
+Current schema version: `2.1`
 
 ## Required fields
 
-- `manifestVersion`: string, must be `2.0`
-- `toolId`: stable lowercase id, kebab-case
+- `manifestVersion`: string, must be `2.1`
+- `toolId`: stable lowercase id, kebab-case; must equal the tool directory name
 - `displayName`: human-readable name
 - `licenseTier`: `free` / `restricted` / future approved tiers
 - `build`: object with `kind`
@@ -30,6 +30,13 @@ Optional fields:
 
 - `build.configuration` (default in CI: `Release`)
 - `build.args` (array of extra arguments)
+- `build.script`: build driver for non-dotnet kinds, relative to the tool directory.
+  CI runs this script and nothing else, so packaging parameters live in exactly one
+  place and cannot drift between local and CI.
+- `build.outputDir`: artifact root, relative to the tool directory. Default `src/dist`.
+
+`build.kind: manual` means there is no build step; the runtime entry must already
+exist in the repository.
 
 ## Runtime model
 
@@ -40,13 +47,30 @@ Supported `runtime.kind` values:
 - `container`
 - `library`
 
-`runtime.entry` is always required.
+`runtime.entry` is always required and describes what the end user launches.
+
+It must be a **relative path inside the tool directory**. Absolute paths and `..`
+escapes are rejected. Extension must match the kind: `exe` → `.exe`,
+`script` → `.ps1` / `.bat` / `.cmd`.
+
+**File existence is only enforced by `validate-tools.ps1` when `build.kind = manual`.**
+For every other kind the entry is produced by a build step, and `artifacts` output
+directories are gitignored, so a clean clone legitimately has no `dist/`. Existence is
+asserted after the build by `scripts/assert-artifacts.ps1`.
+
+## Artifacts model
+
+- `pattern` is relative to the tool directory; absolute paths and `..` escapes are rejected.
+- After a build, every pattern must match at least one file. `assert-artifacts.ps1` enforces this.
+- Directory patterns are allowed where an empty directory is part of the distribution
+  (for example a `data/` folder that switches a tool into portable mode).
+- Packaging collects files by these patterns only; anything not declared is not shipped.
 
 ## Example
 
 ```json
 {
-  "manifestVersion": "2.0",
+  "manifestVersion": "2.1",
   "toolId": "hs2modpackanalyzer",
   "displayName": "HS2 Modpack Analyzer",
   "licenseTier": "free",
@@ -68,3 +92,9 @@ Supported `runtime.kind` values:
   ]
 }
 ```
+
+## Version history
+
+- `2.1`: `runtime.entry` is a path contract, existence is asserted after the build;
+  added `build.script` and `build.outputDir`; `toolId` must equal the directory name.
+- `2.0`: `build` / `runtime` / `artifacts` model, replacing the legacy `type` field.

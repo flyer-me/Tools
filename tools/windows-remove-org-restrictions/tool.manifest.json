@@ -1,5 +1,5 @@
-{
-  "manifestVersion": "2.0",
+﻿{
+  "manifestVersion": "2.1",
   "toolId": "windows-remove-org-restrictions",
   "displayName": "Windows Remove Organization Restrictions",
   "licenseTier": "free",

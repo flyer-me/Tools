@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot "tools"
 
-$supportedManifestVersion = "2.0"
+$supportedManifestVersion = "2.1"
 $supportedRuntimeKinds = @("script", "exe", "container", "library")
 $supportedBuildKinds = @("dotnet-msbuild", "powershell", "batch", "node", "python", "go", "rust", "manual")
 $supportedScriptExtensions = @(".ps1", ".bat", ".cmd")
@@ -20,6 +20,7 @@ if (-not $manifests) {
 
 $errors = New-Object System.Collections.Generic.List[string]
 $index = New-Object System.Collections.Generic.List[object]
+$seenToolIds = @{}
 
 foreach ($manifestPath in $manifests) {
     $toolDir = Split-Path -Parent $manifestPath.FullName
@@ -43,6 +44,16 @@ foreach ($manifestPath in $manifests) {
     if ([string]::IsNullOrWhiteSpace([string]$tool.toolId)) {
         $errors.Add("$($manifestPath.FullName): toolId cannot be empty")
     }
+    else {
+        # toolId 是 tag、产物命名与索引的主键，重复会让下游静默指错工具
+        $toolIdKey = [string]$tool.toolId
+        if ($seenToolIds.ContainsKey($toolIdKey)) {
+            $errors.Add("$($manifestPath.FullName): duplicate toolId '$toolIdKey' (first declared at $($seenToolIds[$toolIdKey]))")
+        }
+        else {
+            $seenToolIds[$toolIdKey] = (Resolve-Path -LiteralPath $manifestPath.FullName).Path.Substring($repoRoot.Length + 1)
+        }
+    }
     if ([string]::IsNullOrWhiteSpace([string]$tool.displayName)) {
         $errors.Add("$($manifestPath.FullName): displayName cannot be empty")
     }
@@ -64,11 +75,34 @@ foreach ($manifestPath in $manifests) {
         continue
     }
 
-    $runtimeEntryPath = Join-Path $toolDir $runtimeEntry
+    # runtime.entry 描述「最终用户双击什么」，必须是工具目录内的相对路径。
+    # 产物存在性只在 build.kind = manual 时静态校验：manual 没有构建步骤，
+    # 文件不在就是真的坏了。其余 kind 的产物由构建产出，静态阶段不要求它存在，
+    # 否则干净 clone 上 dist 永远不在（**/dist/ 被忽略），校验器必然失败。
+    # 产物的存在性断言搬到构建之后：scripts/assert-artifacts.ps1。
+    if ([System.IO.Path]::IsPathRooted($runtimeEntry)) {
+        $errors.Add("$($manifestPath.FullName): runtime.entry must be a relative path, got '$runtimeEntry'")
+        continue
+    }
 
-    if ($runtimeKind -in @("script", "exe")) {
+    $runtimeEntryPath = [System.IO.Path]::GetFullPath((Join-Path $toolDir $runtimeEntry))
+    $toolDirFull = [System.IO.Path]::GetFullPath($toolDir).TrimEnd('\', '/')
+    if (-not $runtimeEntryPath.StartsWith($toolDirFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $errors.Add("$($manifestPath.FullName): runtime.entry escapes the tool directory '$runtimeEntry'")
+        continue
+    }
+
+    if ($runtimeKind -eq "exe") {
+        $exeExt = [System.IO.Path]::GetExtension($runtimeEntry).ToLowerInvariant()
+        if ($exeExt -ne ".exe") {
+            $errors.Add("$($manifestPath.FullName): runtime.kind 'exe' requires a .exe entry, got '$runtimeEntry'")
+            continue
+        }
+    }
+
+    if ($runtimeKind -in @("script", "exe") -and $buildKind -eq "manual") {
         if (-not (Test-Path -LiteralPath $runtimeEntryPath -PathType Leaf)) {
-            $errors.Add("$($manifestPath.FullName): runtime entry not found '$runtimeEntry'")
+            $errors.Add("$($manifestPath.FullName): runtime entry not found '$runtimeEntry' (build.kind 'manual' has no build step to produce it)")
             continue
         }
     }
@@ -78,9 +112,18 @@ foreach ($manifestPath in $manifests) {
             $errors.Add("$($manifestPath.FullName): build.project is required for build.kind 'dotnet-msbuild'")
         }
         else {
-            $projectPath = Join-Path $toolDir ([string]$tool.build.project)
-            if (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
-                $errors.Add("$($manifestPath.FullName): build.project not found '$($tool.build.project)'")
+            $projectRel = [string]$tool.build.project
+            if ([System.IO.Path]::IsPathRooted($projectRel)) {
+                $errors.Add("$($manifestPath.FullName): build.project must be a relative path, got '$projectRel'")
+            }
+            else {
+                $projectPath = [System.IO.Path]::GetFullPath((Join-Path $toolDir $projectRel))
+                if (-not $projectPath.StartsWith($toolDirFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $errors.Add("$($manifestPath.FullName): build.project escapes the tool directory '$projectRel'")
+                }
+                elseif (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
+                    $errors.Add("$($manifestPath.FullName): build.project not found '$projectRel'")
+                }
             }
         }
     }
@@ -145,6 +188,9 @@ foreach ($manifestPath in $manifests) {
             if (-not ($artifact.PSObject.Properties.Name -contains "pattern") -or [string]::IsNullOrWhiteSpace([string]$artifact.pattern)) {
                 $errors.Add("$($manifestPath.FullName): each artifact requires pattern")
             }
+            elseif ([System.IO.Path]::IsPathRooted([string]$artifact.pattern) -or ([string]$artifact.pattern) -match '(^|[\\/])\.\.([\\/]|$)') {
+                $errors.Add("$($manifestPath.FullName): artifact pattern must stay inside the tool directory, got '$($artifact.pattern)'")
+            }
         }
     }
 
@@ -155,6 +201,7 @@ foreach ($manifestPath in $manifests) {
         build = $tool.build
         runtime = $tool.runtime
         artifacts = $tool.artifacts
+        entryExists = (Test-Path -LiteralPath $runtimeEntryPath -PathType Leaf)
         manifest = (Resolve-Path -LiteralPath $manifestPath.FullName).Path.Substring($repoRoot.Length + 1)
     })
 }
