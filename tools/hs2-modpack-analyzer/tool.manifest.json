@@ -3,6 +3,7 @@
   "toolId": "hs2-modpack-analyzer",
   "displayName": "HS2 Modpack Analyzer",
   "licenseTier": "free",
+  "risk": "low",
   "build": {
     "kind": "dotnet-msbuild",
     "project": "src/HS2ModpackAnalyzer.csproj",

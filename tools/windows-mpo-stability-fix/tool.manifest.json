@@ -3,6 +3,7 @@
   "toolId": "windows-mpo-stability-fix",
   "displayName": "Windows MPO Stability Fix",
   "licenseTier": "free",
+  "risk": "elevated",
   "build": {
     "kind": "manual"
   },

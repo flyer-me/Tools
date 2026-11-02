@@ -16,6 +16,7 @@ validator and the release tag format would then disagree with.
 - `toolId`: string, kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`), must equal the tool directory name
 - `displayName`: human-readable name
 - `licenseTier`: `free` / `restricted` / future approved tiers
+- `risk`: `low` / `elevated` — how much the tool changes the machine (see below)
 - `build`: object with `kind`
 - `runtime`: object with `kind` and `entry`
 - `artifacts`: non-empty array, each item includes `kind` and `pattern`
@@ -69,6 +70,15 @@ For every other kind the entry is produced by a build step, and `artifacts` outp
 directories are gitignored, so a clean clone legitimately has no `dist/`. Existence is
 asserted after the build by `scripts/assert-artifacts.ps1`.
 
+## Risk model
+
+`risk` describes what the tool does to the host; `licenseTier` describes who may use
+it. They are separate on purpose — a free tool can still rewrite `bcdedit` settings.
+
+- `low` — reads system state, or writes only inside its own directory.
+- `elevated` — needs administrator rights, writes to `HKLM`, changes boot
+  configuration, or replaces system binaries.
+
 ## Artifacts model
 
 - `pattern` is relative to the tool directory; absolute paths and `..` escapes are rejected.
@@ -107,6 +117,6 @@ asserted after the build by `scripts/assert-artifacts.ps1`.
 ## Version history
 
 - `2.1`: `runtime.entry` is a path contract, existence is asserted after the build;
-  added `build.script` and `build.outputDir`; `toolId` must equal the directory name
-  and be kebab-case; a tool must sit exactly at `tools/<tool-id>/`.
+  added `build.script`, `build.outputDir` and `risk`; `toolId` must equal the
+  directory name and be kebab-case; a tool must sit exactly at `tools/<tool-id>/`.
 - `2.0`: `build` / `runtime` / `artifacts` model, replacing the legacy `type` field.

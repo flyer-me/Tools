@@ -3,6 +3,7 @@
   "toolId": "windows-timer-tweak",
   "displayName": "Windows Timer Tweak",
   "licenseTier": "free",
+  "risk": "elevated",
   "build": {
     "kind": "manual"
   },

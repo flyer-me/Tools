@@ -3,6 +3,7 @@
   "toolId": "hs2-missing-mods-downloader",
   "displayName": "HS2 Missing Mods Downloader",
   "licenseTier": "free",
+  "risk": "low",
   "build": {
     "kind": "python",
     "script": "build_exe.bat",

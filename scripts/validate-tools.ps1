@@ -8,6 +8,8 @@ $supportedManifestVersion = "2.1"
 $supportedRuntimeKinds = @("script", "exe", "container", "library")
 $supportedBuildKinds = @("dotnet-msbuild", "powershell", "batch", "node", "python", "go", "rust", "manual")
 $supportedScriptExtensions = @(".ps1", ".bat", ".cmd")
+# licenseTier 说的是授权，risk 说的是这台机器被改动的程度，两者不能互相顶替。
+$supportedRiskLevels = @("low", "elevated")
 
 if (-not (Test-Path $toolsRoot -PathType Container)) {
     throw "Missing tools directory: $toolsRoot"
@@ -44,7 +46,7 @@ foreach ($toolDirInfo in $toolDirs) {
     }
     $tool = Get-Content -Path $manifestPath -Raw | ConvertFrom-Json
 
-    foreach ($field in @("manifestVersion", "toolId", "displayName", "licenseTier", "build", "runtime", "artifacts")) {
+    foreach ($field in @("manifestVersion", "toolId", "displayName", "licenseTier", "risk", "build", "runtime", "artifacts")) {
         if (-not ($tool.PSObject.Properties.Name -contains $field) -or $null -eq $tool.$field) {
             $errors.Add("$($manifestPath): missing field '$field'")
         }
@@ -88,6 +90,11 @@ foreach ($toolDirInfo in $toolDirs) {
     }
     if ([string]::IsNullOrWhiteSpace([string]$tool.licenseTier)) {
         $errors.Add("$($manifestPath): licenseTier cannot be empty")
+    }
+
+    $riskLevel = if ($tool.PSObject.Properties.Name -contains "risk") { [string]$tool.risk } else { "" }
+    if ($riskLevel -notin $supportedRiskLevels) {
+        $errors.Add("$($manifestPath): unsupported risk '$riskLevel' (expected: $($supportedRiskLevels -join ', '))")
     }
 
     if ($buildKind -notin $supportedBuildKinds) {
@@ -248,6 +255,7 @@ foreach ($toolDirInfo in $toolDirs) {
         manifestVersion = $tool.manifestVersion
         toolId = $tool.toolId
         licenseTier = $tool.licenseTier
+        risk = $riskLevel
         build = $tool.build
         runtime = $tool.runtime
         artifacts = $tool.artifacts

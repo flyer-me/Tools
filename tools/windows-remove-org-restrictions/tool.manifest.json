@@ -3,6 +3,7 @@
   "toolId": "windows-remove-org-restrictions",
   "displayName": "Windows Remove Organization Restrictions",
   "licenseTier": "free",
+  "risk": "elevated",
   "build": {
     "kind": "manual"
   },

@@ -9,16 +9,21 @@ produced by CI and attached to releases — they are not committed.
 
 ## Tool Index
 
-| Tool ID | Runtime | Build | Status |
-|---|---|---|---|
-| `hs2-missing-mods-downloader` | `script` | `python` | Active |
-| `hs2-modpack-analyzer` | `exe` | `dotnet-msbuild` | Active |
-| `login-accessibility-cmd-launch` | `script` | `manual` | Active |
-| `windows-disk-write-tracker` | `exe` | `dotnet-msbuild` | Active |
-| `windows-mpo-stability-fix` | `script` | `manual` | Active |
-| `windows-remove-org-restrictions` | `script` | `manual` | Active |
-| `windows-startmenu-search-slow-fix` | `script` | `manual` | Active |
-| `windows-timer-tweak` | `script` | `manual` | Active |
+| Tool ID | Runtime | Build | Risk | Status |
+|---|---|---|---|---|
+| `hs2-missing-mods-downloader` | `script` | `python` | low | Active |
+| `hs2-modpack-analyzer` | `exe` | `dotnet-msbuild` | low | Active |
+| `login-accessibility-cmd-launch` | `script` | `manual` | **elevated** | Active |
+| `windows-disk-write-tracker` | `exe` | `dotnet-msbuild` | low | Active |
+| `windows-mpo-stability-fix` | `script` | `manual` | **elevated** | Active |
+| `windows-remove-org-restrictions` | `script` | `manual` | **elevated** | Active |
+| `windows-startmenu-search-slow-fix` | `script` | `manual` | **elevated** | Active |
+| `windows-timer-tweak` | `script` | `manual` | **elevated** | Active |
+
+`risk` is not `licenseTier`. `low` tools read system state or write inside their own
+directory. `elevated` tools need administrator rights, write to `HKLM`, change boot
+configuration, or replace system binaries — read the tool's `## Risk Notice` before
+running one.
 
 ## Repository Conventions
 

@@ -3,6 +3,7 @@
   "toolId": "windows-startmenu-search-slow-fix",
   "displayName": "Windows Start Menu/Search Slow Fix",
   "licenseTier": "free",
+  "risk": "elevated",
   "build": {
     "kind": "manual"
   },

@@ -3,6 +3,7 @@
   "toolId": "windows-disk-write-tracker",
   "displayName": "Disk Write Tracker",
   "licenseTier": "free",
+  "risk": "low",
   "build": {
     "kind": "dotnet-msbuild",
     "project": "src/DiskWriteTracker.Cli/DiskWriteTracker.Cli.csproj",

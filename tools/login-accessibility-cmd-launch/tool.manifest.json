@@ -3,6 +3,7 @@
   "toolId": "login-accessibility-cmd-launch",
   "displayName": "Login Accessibility CMD Launch",
   "licenseTier": "restricted",
+  "risk": "elevated",
   "build": {
     "kind": "manual"
   },
