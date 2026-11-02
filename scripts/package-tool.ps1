@@ -71,10 +71,21 @@ function New-ZipFromDirectory {
     finally { $archive.Dispose() }
 }
 
-$manifests = Get-ChildItem -Path $toolsRoot -Recurse -File -Filter 'tool.manifest.json' | Sort-Object FullName
-if (-not $manifests) { throw "No tool manifests found under $toolsRoot" }
+# 枚举口径与 validate-tools.ps1 一致：只看 tools/ 下一级目录里的 manifest。
+$manifests = @(Get-ChildItem -Path $toolsRoot -Directory | Sort-Object Name | ForEach-Object {
+        $candidate = Join-Path $_.FullName 'tool.manifest.json'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { Get-Item -LiteralPath $candidate }
+    })
+if ($manifests.Count -eq 0) { throw "No tool manifests found under $toolsRoot" }
 
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+
+# 上一轮留下的包必须清掉：发布流程上传的是整个 out/packages 目录，
+# 残留会让这次发版顺带带上别的工具、或者旧版本号的同名文件而不自知。
+Get-ChildItem -LiteralPath $OutDir -File -Force |
+    Where-Object { $_.Extension -eq '.zip' -or $_.Name -eq 'SHA256SUMS.txt' } |
+    ForEach-Object { [IO.File]::Delete($_.FullName) }
+
 $sumsPath = Join-Path $OutDir 'SHA256SUMS.txt'
 $sumLines = New-Object System.Collections.Generic.List[string]
 $packed = 0

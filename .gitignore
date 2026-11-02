@@ -1,4 +1,8 @@
-﻿**/.vs/
+# 构建输出：默认整个 dist 目录忽略，只放行手工维护的启动器脚本
+**/dist/**
+!**/dist/*.bat
+
+**/.vs/
 /.dotnet/
 /out/
 /tempbin/
@@ -6,7 +10,6 @@
 
 **/bin/
 **/obj/
-**/dist/
 **/single/
 
 *.log

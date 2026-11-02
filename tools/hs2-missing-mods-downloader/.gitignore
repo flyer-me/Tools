@@ -1,0 +1,8 @@
+# PyInstaller 中间产物
+build/
+*.spec
+__pycache__/
+*.pyc
+
+# 单文件 exe 是构建产物，随 release 分发，不入库
+dist/*.exe

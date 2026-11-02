@@ -1,6 +1,6 @@
 ﻿{
   "manifestVersion": "2.1",
-  "toolId": "hs2modpackanalyzer",
+  "toolId": "hs2-modpack-analyzer",
   "displayName": "HS2 Modpack Analyzer",
   "licenseTier": "free",
   "build": {

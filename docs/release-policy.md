@@ -6,7 +6,7 @@ Tool releases use a tool-scoped SemVer tag:
 
 Examples:
 
-- `tool/hs2modpackanalyzer/v1.2.0`
+- `tool/hs2-modpack-analyzer/v1.2.0`
 - `tool/windows-timer-tweak/v0.3.1`
 
 Pipelines should resolve `<tool-id>` from the tag and only package the matching tool.
@@ -30,7 +30,7 @@ release first, then the tag, then re-tag — see `release-runbook.md`.
 
 ## Known limitation
 
-`hs2modpackanalyzer` sets `GenerateAssemblyInfo=false` (required by ILRepack with
+`hs2-modpack-analyzer` sets `GenerateAssemblyInfo=false` (required by ILRepack with
 `Union=true`, otherwise the merged assemblies collide on assembly attributes). As a
 result `-p:Version=` does **not** end up in the exe metadata for that tool. Its version
 lives in the tag and the package name only.

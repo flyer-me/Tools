@@ -70,41 +70,21 @@ jobs:
           dotnet-version: "8.0.x"
           cache: true
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        shell: pwsh
+        run: python -m pip install --upgrade pyinstaller
+
       - name: Build the tagged tool
         shell: pwsh
         env:
           TOOL_ID: ${{ steps.resolve.outputs.tool-id }}
           VERSION: ${{ steps.resolve.outputs.version }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          $manifestPath = "tools/$env:TOOL_ID/tool.manifest.json"
-          $tool = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-          $toolDir = Split-Path -Parent (Resolve-Path -LiteralPath $manifestPath).Path
-
-          Push-Location $toolDir
-          try {
-            switch ([string]$tool.build.kind) {
-              "dotnet-msbuild" {
-                $args = @()
-                if ($tool.build.args) { foreach ($a in $tool.build.args) { $args += [string]$a } }
-                dotnet publish ([string]$tool.build.project) -c Release "-p:Version=$env:VERSION" @args
-                if ($LASTEXITCODE -ne 0) { throw "publish failed for $env:TOOL_ID" }
-              }
-              "manual" {
-                Write-Host "$env:TOOL_ID has no build step (build.kind = manual)"
-              }
-              default {
-                if (-not $tool.build.script) {
-                  throw "build.kind '$($tool.build.kind)' requires build.script"
-                }
-                & (Join-Path $toolDir ([string]$tool.build.script))
-                if ($LASTEXITCODE -ne 0) { throw "build.script failed for $env:TOOL_ID" }
-              }
-            }
-          }
-          finally {
-            Pop-Location
-          }
+        run: .\scripts\build-tool.ps1 -ToolId $env:TOOL_ID -Version $env:VERSION
 
       - name: Assert declared artifacts exist
         shell: pwsh

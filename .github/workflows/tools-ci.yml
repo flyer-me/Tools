@@ -46,34 +46,18 @@ jobs:
           dotnet-version: "8.0.x"
           cache: true
 
-      - name: Publish dotnet-msbuild tools
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
         shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $manifests = Get-ChildItem -Path tools -Recurse -File -Filter "tool.manifest.json"
-          foreach ($manifest in $manifests) {
-            $tool = Get-Content $manifest.FullName -Raw | ConvertFrom-Json
-            if ($tool.build.kind -ne "dotnet-msbuild") { continue }
+        run: python -m pip install --upgrade pyinstaller
 
-            $toolDir = Split-Path -Parent $manifest.FullName
-            $project = [string]$tool.build.project
-            $configuration = if ($tool.build.configuration) { [string]$tool.build.configuration } else { "Release" }
-            $args = @()
-            if ($tool.build.args) {
-              foreach ($arg in $tool.build.args) { $args += [string]$arg }
-            }
-
-            Push-Location $toolDir
-            try {
-              # 发布属性（RID / 单文件 / 压缩）固化在各项目的 csproj 里，
-              # 这里只传 configuration 与 manifest 声明的额外参数。
-              dotnet publish $project -c $configuration @args
-              if ($LASTEXITCODE -ne 0) { throw "publish failed for $($tool.toolId)" }
-            }
-            finally {
-              Pop-Location
-            }
-          }
+      - name: Build tools
+        shell: pwsh
+        run: .\scripts\build-tool.ps1
 
       - name: Assert declared artifacts exist
         shell: pwsh

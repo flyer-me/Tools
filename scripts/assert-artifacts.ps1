@@ -10,8 +10,12 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot "tools"
 
-$manifests = Get-ChildItem -Path $toolsRoot -Recurse -File -Filter "tool.manifest.json" | Sort-Object FullName
-if (-not $manifests) {
+# 枚举口径与 validate-tools.ps1 一致：只看 tools/ 下一级目录里的 manifest。
+$manifests = @(Get-ChildItem -Path $toolsRoot -Directory | Sort-Object Name | ForEach-Object {
+        $candidate = Join-Path $_.FullName "tool.manifest.json"
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { Get-Item -LiteralPath $candidate }
+    })
+if ($manifests.Count -eq 0) {
     throw "No tool manifests found under $toolsRoot"
 }
 

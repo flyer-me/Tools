@@ -13,27 +13,45 @@ if (-not (Test-Path $toolsRoot -PathType Container)) {
     throw "Missing tools directory: $toolsRoot"
 }
 
-$manifests = Get-ChildItem -Path $toolsRoot -Recurse -File -Filter "tool.manifest.json" | Sort-Object FullName
-if (-not $manifests) {
-    throw "No tool manifests found under $toolsRoot"
+$manifestName = "tool.manifest.json"
+$toolDirs = @(Get-ChildItem -Path $toolsRoot -Directory | Sort-Object Name)
+if ($toolDirs.Count -eq 0) {
+    throw "No tool directories found under $toolsRoot"
 }
 
 $errors = New-Object System.Collections.Generic.List[string]
 $index = New-Object System.Collections.Generic.List[object]
 $seenToolIds = @{}
+$toolIdPattern = '^[a-z0-9]+(-[a-z0-9]+)*$'
 
-foreach ($manifestPath in $manifests) {
-    $toolDir = Split-Path -Parent $manifestPath.FullName
-    $tool = Get-Content -Path $manifestPath.FullName -Raw | ConvertFrom-Json
+# 平级是硬约束：tools/<toolId>/tool.manifest.json，深度恰好一层。
+# 只靠文档写"别嵌套"守不住，违规必须在校验阶段就红。
+$strayManifests = @(Get-ChildItem -Path $toolsRoot -Recurse -File -Filter $manifestName | Where-Object {
+        $relative = $_.FullName.Substring($toolsRoot.Length + 1)
+        $depth = @($relative.ToCharArray() | Where-Object { $_ -eq '\' -or $_ -eq '/' }).Count
+        $depth -ne 1
+    })
+foreach ($stray in $strayManifests) {
+    $errors.Add("$($stray.FullName): nested tool manifest; a tool must be exactly tools/<toolId>/$manifestName")
+}
+
+foreach ($toolDirInfo in $toolDirs) {
+    $toolDir = $toolDirInfo.FullName
+    $manifestPath = Join-Path $toolDir $manifestName
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        $errors.Add("$($manifestPath): missing $manifestName (every directory under tools/ is a tool)")
+        continue
+    }
+    $tool = Get-Content -Path $manifestPath -Raw | ConvertFrom-Json
 
     foreach ($field in @("manifestVersion", "toolId", "displayName", "licenseTier", "build", "runtime", "artifacts")) {
         if (-not ($tool.PSObject.Properties.Name -contains $field) -or $null -eq $tool.$field) {
-            $errors.Add("$($manifestPath.FullName): missing field '$field'")
+            $errors.Add("$($manifestPath): missing field '$field'")
         }
     }
 
     if ($tool.manifestVersion -ne $supportedManifestVersion) {
-        $errors.Add("$($manifestPath.FullName): unsupported manifestVersion '$($tool.manifestVersion)' (expected '$supportedManifestVersion')")
+        $errors.Add("$($manifestPath): unsupported manifestVersion '$($tool.manifestVersion)' (expected '$supportedManifestVersion')")
         continue
     }
 
@@ -42,36 +60,47 @@ foreach ($manifestPath in $manifests) {
     $runtimeEntry = if ($tool.runtime.PSObject.Properties.Name -contains "entry") { [string]$tool.runtime.entry } else { "" }
 
     if ([string]::IsNullOrWhiteSpace([string]$tool.toolId)) {
-        $errors.Add("$($manifestPath.FullName): toolId cannot be empty")
+        $errors.Add("$($manifestPath): toolId cannot be empty")
     }
     else {
         # toolId 是 tag、产物命名与索引的主键，重复会让下游静默指错工具
         $toolIdKey = [string]$tool.toolId
+        $dirName = $toolDirInfo.Name
+
+        # toolId 同时是目录名、tag 段和产物名。大小写混用或与目录不符，
+        # 会让 tag 与路径指向两个不同的东西，且失败点离原因很远。
+        if ($toolIdKey -cnotmatch $toolIdPattern) {
+            $errors.Add("$($manifestPath): toolId '$toolIdKey' must be kebab-case, matching $toolIdPattern")
+        }
+        if ($toolIdKey -cne $dirName) {
+            $errors.Add("$($manifestPath): toolId '$toolIdKey' must equal the directory name '$dirName'")
+        }
+
         if ($seenToolIds.ContainsKey($toolIdKey)) {
-            $errors.Add("$($manifestPath.FullName): duplicate toolId '$toolIdKey' (first declared at $($seenToolIds[$toolIdKey]))")
+            $errors.Add("$($manifestPath): duplicate toolId '$toolIdKey' (first declared at $($seenToolIds[$toolIdKey]))")
         }
         else {
-            $seenToolIds[$toolIdKey] = (Resolve-Path -LiteralPath $manifestPath.FullName).Path.Substring($repoRoot.Length + 1)
+            $seenToolIds[$toolIdKey] = (Resolve-Path -LiteralPath $manifestPath).Path.Substring($repoRoot.Length + 1)
         }
     }
     if ([string]::IsNullOrWhiteSpace([string]$tool.displayName)) {
-        $errors.Add("$($manifestPath.FullName): displayName cannot be empty")
+        $errors.Add("$($manifestPath): displayName cannot be empty")
     }
     if ([string]::IsNullOrWhiteSpace([string]$tool.licenseTier)) {
-        $errors.Add("$($manifestPath.FullName): licenseTier cannot be empty")
+        $errors.Add("$($manifestPath): licenseTier cannot be empty")
     }
 
     if ($buildKind -notin $supportedBuildKinds) {
-        $errors.Add("$($manifestPath.FullName): unsupported build.kind '$buildKind'")
+        $errors.Add("$($manifestPath): unsupported build.kind '$buildKind'")
     }
 
     if ($runtimeKind -notin $supportedRuntimeKinds) {
-        $errors.Add("$($manifestPath.FullName): unsupported runtime.kind '$runtimeKind'")
+        $errors.Add("$($manifestPath): unsupported runtime.kind '$runtimeKind'")
         continue
     }
 
     if ([string]::IsNullOrWhiteSpace($runtimeEntry)) {
-        $errors.Add("$($manifestPath.FullName): runtime.entry is required")
+        $errors.Add("$($manifestPath): runtime.entry is required")
         continue
     }
 
@@ -81,57 +110,78 @@ foreach ($manifestPath in $manifests) {
     # 否则干净 clone 上 dist 永远不在（**/dist/ 被忽略），校验器必然失败。
     # 产物的存在性断言搬到构建之后：scripts/assert-artifacts.ps1。
     if ([System.IO.Path]::IsPathRooted($runtimeEntry)) {
-        $errors.Add("$($manifestPath.FullName): runtime.entry must be a relative path, got '$runtimeEntry'")
+        $errors.Add("$($manifestPath): runtime.entry must be a relative path, got '$runtimeEntry'")
         continue
     }
 
     $runtimeEntryPath = [System.IO.Path]::GetFullPath((Join-Path $toolDir $runtimeEntry))
     $toolDirFull = [System.IO.Path]::GetFullPath($toolDir).TrimEnd('\', '/')
     if (-not $runtimeEntryPath.StartsWith($toolDirFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
-        $errors.Add("$($manifestPath.FullName): runtime.entry escapes the tool directory '$runtimeEntry'")
+        $errors.Add("$($manifestPath): runtime.entry escapes the tool directory '$runtimeEntry'")
         continue
     }
 
     if ($runtimeKind -eq "exe") {
         $exeExt = [System.IO.Path]::GetExtension($runtimeEntry).ToLowerInvariant()
         if ($exeExt -ne ".exe") {
-            $errors.Add("$($manifestPath.FullName): runtime.kind 'exe' requires a .exe entry, got '$runtimeEntry'")
+            $errors.Add("$($manifestPath): runtime.kind 'exe' requires a .exe entry, got '$runtimeEntry'")
             continue
         }
     }
 
     if ($runtimeKind -in @("script", "exe") -and $buildKind -eq "manual") {
         if (-not (Test-Path -LiteralPath $runtimeEntryPath -PathType Leaf)) {
-            $errors.Add("$($manifestPath.FullName): runtime entry not found '$runtimeEntry' (build.kind 'manual' has no build step to produce it)")
+            $errors.Add("$($manifestPath): runtime entry not found '$runtimeEntry' (build.kind 'manual' has no build step to produce it)")
             continue
         }
     }
 
     if ($buildKind -eq "dotnet-msbuild") {
         if (-not ($tool.build.PSObject.Properties.Name -contains "project") -or [string]::IsNullOrWhiteSpace([string]$tool.build.project)) {
-            $errors.Add("$($manifestPath.FullName): build.project is required for build.kind 'dotnet-msbuild'")
+            $errors.Add("$($manifestPath): build.project is required for build.kind 'dotnet-msbuild'")
         }
         else {
             $projectRel = [string]$tool.build.project
             if ([System.IO.Path]::IsPathRooted($projectRel)) {
-                $errors.Add("$($manifestPath.FullName): build.project must be a relative path, got '$projectRel'")
+                $errors.Add("$($manifestPath): build.project must be a relative path, got '$projectRel'")
             }
             else {
                 $projectPath = [System.IO.Path]::GetFullPath((Join-Path $toolDir $projectRel))
                 if (-not $projectPath.StartsWith($toolDirFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    $errors.Add("$($manifestPath.FullName): build.project escapes the tool directory '$projectRel'")
+                    $errors.Add("$($manifestPath): build.project escapes the tool directory '$projectRel'")
                 }
                 elseif (-not (Test-Path -LiteralPath $projectPath -PathType Leaf)) {
-                    $errors.Add("$($manifestPath.FullName): build.project not found '$projectRel'")
+                    $errors.Add("$($manifestPath): build.project not found '$projectRel'")
                 }
             }
         }
     }
 
+    # build.script 是构建驱动脚本（源文件，不是产物），静态就能验它存在。
+    # 它是非 dotnet 工具在 CI 上唯一的构建入口，写错路径等于该工具永远构建不出来。
+    if ($tool.build.PSObject.Properties.Name -contains "script" -and -not [string]::IsNullOrWhiteSpace([string]$tool.build.script)) {
+        $buildScriptRel = [string]$tool.build.script
+        if ([System.IO.Path]::IsPathRooted($buildScriptRel)) {
+            $errors.Add("$($manifestPath): build.script must be a relative path, got '$buildScriptRel'")
+        }
+        else {
+            $buildScriptPath = [System.IO.Path]::GetFullPath((Join-Path $toolDir $buildScriptRel))
+            if (-not $buildScriptPath.StartsWith($toolDirFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $errors.Add("$($manifestPath): build.script escapes the tool directory '$buildScriptRel'")
+            }
+            elseif (-not (Test-Path -LiteralPath $buildScriptPath -PathType Leaf)) {
+                $errors.Add("$($manifestPath): build.script not found '$buildScriptRel'")
+            }
+        }
+    }
+    elseif ($buildKind -notin @("dotnet-msbuild", "manual")) {
+        $errors.Add("$($manifestPath): build.kind '$buildKind' requires build.script")
+    }
+
     if ($runtimeKind -eq "script") {
         $scriptExt = [System.IO.Path]::GetExtension($runtimeEntryPath).ToLowerInvariant()
         if ($scriptExt -notin $supportedScriptExtensions) {
-            $errors.Add("$($manifestPath.FullName): unsupported script extension '$scriptExt'")
+            $errors.Add("$($manifestPath): unsupported script extension '$scriptExt'")
             continue
         }
 
@@ -141,7 +191,7 @@ foreach ($manifestPath in $manifests) {
             $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($runtimeEntryPath, [ref]$nullTokens, [ref]$parseErrors) | Out-Null
             if ($parseErrors.Count -gt 0) {
-                $errors.Add("$($manifestPath.FullName): PowerShell parse errors in '$runtimeEntry'")
+                $errors.Add("$($manifestPath): PowerShell parse errors in '$runtimeEntry'")
             }
         }
 
@@ -155,7 +205,7 @@ foreach ($manifestPath in $manifests) {
                 -not $line.StartsWith("@rem ", [System.StringComparison]::OrdinalIgnoreCase)
             }
             if (-not $commandLines -or $commandLines.Count -eq 0) {
-                $errors.Add("$($manifestPath.FullName): batch entry '$runtimeEntry' has no executable command lines")
+                $errors.Add("$($manifestPath): batch entry '$runtimeEntry' has no executable command lines")
             }
 
             $riskyPatterns = @(
@@ -170,7 +220,7 @@ foreach ($manifestPath in $manifests) {
                 $normalized = $line.ToLowerInvariant()
                 foreach ($pattern in $riskyPatterns) {
                     if ($normalized.Contains($pattern)) {
-                        Write-Warning "$($manifestPath.FullName): risky batch command detected '$line'"
+                        Write-Warning "$($manifestPath): risky batch command detected '$line'"
                     }
                 }
             }
@@ -178,18 +228,18 @@ foreach ($manifestPath in $manifests) {
     }
 
     if (-not ($tool.artifacts -is [System.Array]) -or $tool.artifacts.Count -eq 0) {
-        $errors.Add("$($manifestPath.FullName): artifacts must be a non-empty array")
+        $errors.Add("$($manifestPath): artifacts must be a non-empty array")
     }
     else {
         foreach ($artifact in $tool.artifacts) {
             if (-not ($artifact.PSObject.Properties.Name -contains "kind") -or [string]::IsNullOrWhiteSpace([string]$artifact.kind)) {
-                $errors.Add("$($manifestPath.FullName): each artifact requires kind")
+                $errors.Add("$($manifestPath): each artifact requires kind")
             }
             if (-not ($artifact.PSObject.Properties.Name -contains "pattern") -or [string]::IsNullOrWhiteSpace([string]$artifact.pattern)) {
-                $errors.Add("$($manifestPath.FullName): each artifact requires pattern")
+                $errors.Add("$($manifestPath): each artifact requires pattern")
             }
             elseif ([System.IO.Path]::IsPathRooted([string]$artifact.pattern) -or ([string]$artifact.pattern) -match '(^|[\\/])\.\.([\\/]|$)') {
-                $errors.Add("$($manifestPath.FullName): artifact pattern must stay inside the tool directory, got '$($artifact.pattern)'")
+                $errors.Add("$($manifestPath): artifact pattern must stay inside the tool directory, got '$($artifact.pattern)'")
             }
         }
     }
@@ -202,12 +252,14 @@ foreach ($manifestPath in $manifests) {
         runtime = $tool.runtime
         artifacts = $tool.artifacts
         entryExists = (Test-Path -LiteralPath $runtimeEntryPath -PathType Leaf)
-        manifest = (Resolve-Path -LiteralPath $manifestPath.FullName).Path.Substring($repoRoot.Length + 1)
+        manifest = (Resolve-Path -LiteralPath $manifestPath).Path.Substring($repoRoot.Length + 1)
     })
 }
 
 if ($errors.Count -gt 0) {
-    $errors | ForEach-Object { Write-Error $_ }
+    # $ErrorActionPreference = "Stop" 下逐条 Write-Error 会在第一条就抛出，
+    # 用户只看到一个毛病、修一个跑一次。先列全，最后统一失败。
+    $errors | ForEach-Object { Write-Host "ERROR: $_" }
     throw "Tool validation failed with $($errors.Count) issue(s)."
 }
 

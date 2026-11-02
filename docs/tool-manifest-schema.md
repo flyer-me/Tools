@@ -2,10 +2,18 @@
 
 Current schema version: `2.1`
 
+## Layout
+
+`tools/<tool-id>/tool.manifest.json` — exactly one level deep.
+
+A tool is never grouped. `tools/windows/foo` and `tools/foo/v2` are both rejected by
+`validate-tools.ps1`, so the repository cannot slowly regrow a taxonomy that the
+validator and the release tag format would then disagree with.
+
 ## Required fields
 
 - `manifestVersion`: string, must be `2.1`
-- `toolId`: stable lowercase id, kebab-case; must equal the tool directory name
+- `toolId`: string, kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`), must equal the tool directory name
 - `displayName`: human-readable name
 - `licenseTier`: `free` / `restricted` / future approved tiers
 - `build`: object with `kind`
@@ -31,8 +39,11 @@ Optional fields:
 - `build.configuration` (default in CI: `Release`)
 - `build.args` (array of extra arguments)
 - `build.script`: build driver for non-dotnet kinds, relative to the tool directory.
-  CI runs this script and nothing else, so packaging parameters live in exactly one
-  place and cannot drift between local and CI.
+  `validate-tools.ps1` requires it to exist for every kind except `dotnet-msbuild`
+  and `manual`. `scripts/build-tool.ps1` runs it and nothing else, so packaging
+  parameters live in exactly one place and cannot drift between local and CI.
+  A `.bat` / `.cmd` driver is invoked with `--no-pause` so an interactive build
+  script can still be run by CI; a driver that ignores the argument is fine.
 - `build.outputDir`: artifact root, relative to the tool directory. Default `src/dist`.
 
 `build.kind: manual` means there is no build step; the runtime entry must already
@@ -71,7 +82,7 @@ asserted after the build by `scripts/assert-artifacts.ps1`.
 ```json
 {
   "manifestVersion": "2.1",
-  "toolId": "hs2modpackanalyzer",
+  "toolId": "hs2-modpack-analyzer",
   "displayName": "HS2 Modpack Analyzer",
   "licenseTier": "free",
   "build": {
@@ -96,5 +107,6 @@ asserted after the build by `scripts/assert-artifacts.ps1`.
 ## Version history
 
 - `2.1`: `runtime.entry` is a path contract, existence is asserted after the build;
-  added `build.script` and `build.outputDir`; `toolId` must equal the directory name.
+  added `build.script` and `build.outputDir`; `toolId` must equal the directory name
+  and be kebab-case; a tool must sit exactly at `tools/<tool-id>/`.
 - `2.0`: `build` / `runtime` / `artifacts` model, replacing the legacy `type` field.

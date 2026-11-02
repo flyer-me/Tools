@@ -3,7 +3,13 @@ chcp 65001 >nul 2>&1
 :: ============================================================
 ::  Build standalone .exe from source
 ::  Requires: Python 3.8+ with PyInstaller (pip install pyinstaller)
+::
+::  Usage: build_exe.bat [--no-pause]
+::         --no-pause   automation mode, do not wait for a key press
 :: ============================================================
+
+set "NOPAUSE="
+if /i "%~1"=="--no-pause" set "NOPAUSE=1"
 
 cd /d "%~dp0"
 
@@ -37,12 +43,12 @@ if exist "%~dp0dist\download_missing_mods.exe" (
     for %%f in ("%~dp0dist\download_missing_mods.exe") do echo   Size: %%~zf bytes
 ) else (
     echo [ERROR] Build failed.
-    pause
+    if not defined NOPAUSE pause
     exit /b 1
 )
 
 echo.
-echo Build complete! / 构建完成！
+echo Build complete!
 echo Run setup.bat to install into a ModResolver directory.
 echo.
-pause
+if not defined NOPAUSE pause

@@ -1,0 +1,37 @@
+﻿{
+  "manifestVersion": "2.1",
+  "toolId": "hs2-missing-mods-downloader",
+  "displayName": "HS2 Missing Mods Downloader",
+  "licenseTier": "free",
+  "build": {
+    "kind": "python",
+    "script": "build_exe.bat",
+    "outputDir": "dist"
+  },
+  "runtime": {
+    "kind": "script",
+    "entry": "dist/download_missing_mods.bat"
+  },
+  "artifacts": [
+    {
+      "kind": "exe",
+      "pattern": "dist/*.exe"
+    },
+    {
+      "kind": "script",
+      "pattern": "dist/*.bat"
+    },
+    {
+      "kind": "script",
+      "pattern": "setup.bat"
+    },
+    {
+      "kind": "source",
+      "pattern": "src/*.py"
+    },
+    {
+      "kind": "doc",
+      "pattern": "README.md"
+    }
+  ]
+}

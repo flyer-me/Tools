@@ -1,44 +1,67 @@
 ﻿# Tools Source Repository
 
-This repository is a multi-tool source-of-truth.
-All tools are stored under `tools/<tool-id>/` and discovered by `tools/*/tool.manifest.json`.
+This repository is the source of truth for a set of small Windows tools.
+Every tool is exactly one directory deep: `tools/<tool-id>/`, and each one carries
+a `tool.manifest.json` at its root. Nothing is nested, nothing is grouped.
+
+Source, scripts, docs and build configuration live here. Distribution binaries are
+produced by CI and attached to releases — they are not committed.
 
 ## Tool Index
 
-| Tool ID | Runtime | Build | Status | Path |
-|---|---|---|---|---|
-| `hs2modpackanalyzer` | `exe` | `dotnet-msbuild` | Active | `tools/hs2modpackanalyzer` |
-| `windows-disk-write-tracker` | `exe` | `dotnet-msbuild` | Active | `tools/windows-disk-write-tracker` |
-| `windows-startmenu-search-slow-fix` | `script` | `manual` | Active | `tools/windows-startmenu-search-slow-fix` |
-| `windows-timer-tweak` | `script` | `manual` | Active | `tools/windows-timer-tweak` |
-| `login-accessibility-cmd-launch` | `script` | `manual` | Active | `tools/login-accessibility-cmd-launch` |
-| `windows-mpo-stability-fix` | `script` | `manual` | Active | `tools/windows-mpo-stability-fix` |
+| Tool ID | Runtime | Build | Status |
+|---|---|---|---|
+| `hs2-missing-mods-downloader` | `script` | `python` | Active |
+| `hs2-modpack-analyzer` | `exe` | `dotnet-msbuild` | Active |
+| `login-accessibility-cmd-launch` | `script` | `manual` | Active |
+| `windows-disk-write-tracker` | `exe` | `dotnet-msbuild` | Active |
+| `windows-mpo-stability-fix` | `script` | `manual` | Active |
+| `windows-remove-org-restrictions` | `script` | `manual` | Active |
+| `windows-startmenu-search-slow-fix` | `script` | `manual` | Active |
+| `windows-timer-tweak` | `script` | `manual` | Active |
 
 ## Repository Conventions
 
-- This repository stores source code, scripts, docs, and build configuration only.
-- Final distribution binaries are produced by CI/CD pipelines, not committed to Git.
-- Tool release tags use: `tool/<tool-id>/vX.Y.Z`
-- Every tool must include a `tool.manifest.json`.
-- Every tool manifest must follow schema `2.0`.
+- A tool is a directory directly under `tools/`. The directory name **is** the
+  `toolId`, and `toolId` must be kebab-case. Both rules are enforced by the
+  validator, not by this document.
+- Every tool must include a `tool.manifest.json` following schema `2.1`.
+- Release tags use: `tool/<tool-id>/vX.Y.Z`. One tag releases exactly one tool.
+- `dist/` directories are build output and are gitignored, with one exception:
+  hand-maintained launcher scripts under `dist/` stay in Git.
 
 ## Quick Validation
 
 Static check — no SDK needed, runs on a clean clone:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\\scripts\\validate-tools.ps1
+pwsh -File .\scripts\validate-tools.ps1
 ```
 
-After a build — asserts every declared artifact actually exists:
+Build every tool, then assert every declared artifact actually exists:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\\scripts\\assert-artifacts.ps1
+pwsh -File .\scripts\build-tool.ps1
+pwsh -File .\scripts\assert-artifacts.ps1
+```
+
+Build a single tool (same code path CI uses):
+
+```powershell
+pwsh -File .\scripts\build-tool.ps1 -ToolId windows-disk-write-tracker
+```
+
+Package everything into `out/packages` (zips + `SHA256SUMS.txt`):
+
+```powershell
+pwsh -File .\scripts\package-tool.ps1 -Version 0.0.0-local
 ```
 
 ## Handoff Docs
 
-- `docs/tool-manifest-schema.md`
-- `docs/agent-handoff.md`
-- `docs/release-runbook.md`
-- `docs/script-risk-policy.md`
+- `docs/tool-manifest-schema.md` — what a manifest may contain
+- `docs/release-policy.md` — versioning, tag rules, what may ship
+- `docs/release-runbook.md` — step-by-step release and rollback
+- `docs/script-risk-policy.md` — how risky scripts are classified
+- `docs/agent-handoff.md` — context for whoever picks this up next
+- `docs/backlog/` — ideas that are not tools (kept out of `tools/` on purpose)
