@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net472</TargetFramework>
@@ -34,7 +34,10 @@
            Text="Missing dependency: lib\KKManager\KKManager.Core.dll" />
   </Target>
 
-  <Target Name="CreateSingleFileExecutable" AfterTargets="Build" Condition="'$(CreateSingleFile)' == 'true'">
+  <!-- 挂在 Publish 而不是 Build：分发件只由 publish 产生，dotnet build 不产任何
+       可分发物。这样与其它 dotnet 工具的分发契约一致（见 docs/tool-manifest-schema.md
+       的 Artifacts model）。net472 不支持 PublishSingleFile，所以仍用 ILRepack 合并。 -->
+  <Target Name="CreateSingleFileExecutable" AfterTargets="Publish" Condition="'$(CreateSingleFile)' == 'true'">
     <ItemGroup>
       <_MergeInput Include="$(OutputPath)$(AssemblyName).exe" />
       <_MergeInput Include="@(SingleFileDependency->'$(OutputPath)%(Filename)%(Extension)')" Condition="Exists('$(OutputPath)%(Filename)%(Extension)')" />
@@ -50,7 +53,17 @@
       AllowDuplicateResources="true" />
   </Target>
 
-  <Target Name="DeploySingleFileToHs2" DependsOnTargets="Build;CreateSingleFileExecutable">
+  <!-- dist 是分发形态目录，只留 exe 与绑定重定向配置。
+       publish 会把依赖 dll、pdb、deps.json 一起铺过来，不清理就会被打进 zip。 -->
+  <Target Name="TrimDist" AfterTargets="CreateSingleFileExecutable" Condition="'$(CreateSingleFile)' == 'true'">
+    <ItemGroup>
+      <_DistJunk Include="$(SingleFileOutputDir)*.*"
+                 Exclude="$(SingleFileOutputPath);$(SingleFileOutputDir)$(AssemblyName).exe.config" />
+    </ItemGroup>
+    <Delete Files="@(_DistJunk)" />
+  </Target>
+
+  <Target Name="DeploySingleFileToHs2" DependsOnTargets="Publish;CreateSingleFileExecutable">
     <Error Condition="'$(Hs2InstallDir)' == ''" Text="Hs2InstallDir is required. Example: /p:Hs2InstallDir=D:\ProgramData\HS2_DXBR_R16" />
     <Error Condition="!Exists('$(SingleFileOutputPath)')" Text="Single file executable not found: $(SingleFileOutputPath)" />
     <Copy SourceFiles="$(SingleFileOutputPath)" DestinationFiles="$(Hs2InstallDir)\$(AssemblyName).exe" />

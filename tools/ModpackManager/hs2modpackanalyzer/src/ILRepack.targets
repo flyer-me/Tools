@@ -2,6 +2,12 @@
   <!--
     Intentionally empty.
     Presence of this file disables ILRepack.Lib.MSBuild.Task's default Release target.
-    Single-file merge is handled by HS2ModpackAnalyzer.csproj target CreateSingleFileExecutable.
+    Single-file merge is handled by HS2ModpackAnalyzer.csproj target CreateSingleFileExecutable,
+    which runs AfterTargets="Publish".
+
+    Do not delete this file: it is part of the distribution contract of this tool.
+    net472 cannot use PublishSingleFile (requires .NET Core 3.0+), so the merge is
+    done by ILRepack and then trimmed by the TrimDist target. See
+    docs/tool-manifest-schema.md, section "Artifacts model".
   -->
 </Project>

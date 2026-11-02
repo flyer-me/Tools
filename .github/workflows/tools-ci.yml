@@ -46,7 +46,7 @@ jobs:
           dotnet-version: "8.0.x"
           cache: true
 
-      - name: Build dotnet-msbuild tools
+      - name: Publish dotnet-msbuild tools
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -65,13 +65,19 @@ jobs:
 
             Push-Location $toolDir
             try {
-              dotnet restore $project
-              dotnet build $project -c $configuration @args
+              # 发布属性（RID / 单文件 / 压缩）固化在各项目的 csproj 里，
+              # 这里只传 configuration 与 manifest 声明的额外参数。
+              dotnet publish $project -c $configuration @args
+              if ($LASTEXITCODE -ne 0) { throw "publish failed for $($tool.toolId)" }
             }
             finally {
               Pop-Location
             }
           }
+
+      - name: Assert declared artifacts exist
+        shell: pwsh
+        run: .\scripts\assert-artifacts.ps1
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

@@ -19,6 +19,10 @@
     {
       "kind": "exe",
       "pattern": "src/dist/*.exe"
+    },
+    {
+      "kind": "config",
+      "pattern": "src/dist/*.config"
     }
   ]
 }

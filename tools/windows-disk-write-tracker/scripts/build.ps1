@@ -143,11 +143,16 @@ Write-Host "SDK    : $($sdks -join '; ')"
 
 Write-Host ''
 Write-Host '--- restore ---'
-& $dotnet restore DiskWriteTracker.sln
+# Release 下 Cli.csproj 固定了 RuntimeIdentifier=win-x64，restore 必须带同一个 RID，
+# 否则 project.assets.json 里没有 net8.0-windows/win-x64 目标，build 会报 NETSDK1047。
+& $dotnet restore DiskWriteTracker.sln -r $Runtime
 if ($LASTEXITCODE -ne 0) { throw 'restore 失败' }
 
 Write-Host ''
 Write-Host '--- build ---'
+# 不要给 sln 传 -r：解决方案级构建不支持指定 RID（NETSDK1134）。
+# Cli.csproj 自己声明了 RuntimeIdentifier=win-x64，restore 又带了同样的 RID，
+# 所以这里不带 -r 也会选到 net8.0-windows/win-x64 目标。
 & $dotnet build DiskWriteTracker.sln -c $Configuration --no-restore -v minimal
 if ($LASTEXITCODE -ne 0) { throw 'build 失败' }
 
@@ -179,14 +184,11 @@ if (-not (Test-Path $dist)) { New-Item -ItemType Directory -Path $dist -Force | 
 # 采用覆盖式发布：publish 会重写同名文件，残留的旧文件不影响运行。
 # 需要彻底重来请手动删除 dist 目录。
 
-& $dotnet publish (Join-Path $repoRoot 'src\DiskWriteTracker.Cli\DiskWriteTracker.Cli.csproj') `
-    -c $Configuration -r $Runtime --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true `
-    -p:PublishReadyToRun=true `
-    -p:DebugType=none -p:DebugSymbols=false `
-    -o $dist
+# publish 属性（RID / self-contained / 单文件 / 压缩 / R2R）全部固化在
+# DiskWriteTracker.Cli.csproj 的 Release 条件组里，这里不再传 -p:。
+# CI 走的是同一条命令，参数只有一处真源，本地与 CI 不可能漂移。
+# 产物由 csproj 的 StageDist target 落到 src\dist，不需要 -o。
+& $dotnet publish (Join-Path $repoRoot 'src\DiskWriteTracker.Cli\DiskWriteTracker.Cli.csproj') -c $Configuration
 if ($LASTEXITCODE -ne 0) { throw 'publish 失败' }
 
 # ---------- 产物形态：只留 exe / README.txt / data ----------

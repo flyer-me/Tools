@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
 
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -11,7 +11,10 @@
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
-    <Version>0.1.0</Version>
+    <!-- 真实版本由 release tag 通过 -p:Version= 注入；本地构建用占位值。
+         IncludeSourceRevisionInInformationalVersion 关掉，避免 tag 版本被 +<sha> 污染。 -->
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Authors>DiskWriteTracker</Authors>
     <Product>DiskWriteTracker</Product>
   </PropertyGroup>
