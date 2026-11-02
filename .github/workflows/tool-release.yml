@@ -1,0 +1,142 @@
+﻿name: tool-release
+
+# 只处理 tool/<tool-id>/vX.Y.Z 形式的 tag，且只构建该 tag 指定的那一个工具。
+# 这是仓库唯一持有写权限的 workflow；tools-ci 保持 contents: read。
+
+on:
+  push:
+    tags: [ "tool/*/v*.*.*" ]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve tool id and version from tag
+        id: resolve
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^tool/([a-z0-9][a-z0-9-]*)/v(\d+\.\d+\.\d+)$') {
+            throw "Tag '$tag' does not match tool/<tool-id>/vX.Y.Z"
+          }
+          $toolId = $Matches[1]
+          $version = $Matches[2]
+
+          $manifestPath = "tools/$toolId/tool.manifest.json"
+          if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+            throw "Tag points at '$toolId' but '$manifestPath' does not exist"
+          }
+
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          if ($manifest.toolId -ne $toolId) {
+            throw "Manifest toolId '$($manifest.toolId)' does not match directory '$toolId'"
+          }
+
+          "tool-id=$toolId" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Resolved $toolId v$version"
+
+      - name: Refuse to overwrite an existing release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          gh release view $tag --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release for '$tag' already exists. Delete it first if you really intend to republish."
+          }
+          Write-Host "No existing release for $tag"
+
+      - name: Validate manifests and scripts
+        shell: pwsh
+        run: .\scripts\validate-tools.ps1
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+          cache: true
+
+      - name: Build the tagged tool
+        shell: pwsh
+        env:
+          TOOL_ID: ${{ steps.resolve.outputs.tool-id }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $manifestPath = "tools/$env:TOOL_ID/tool.manifest.json"
+          $tool = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $toolDir = Split-Path -Parent (Resolve-Path -LiteralPath $manifestPath).Path
+
+          Push-Location $toolDir
+          try {
+            switch ([string]$tool.build.kind) {
+              "dotnet-msbuild" {
+                $args = @()
+                if ($tool.build.args) { foreach ($a in $tool.build.args) { $args += [string]$a } }
+                dotnet publish ([string]$tool.build.project) -c Release "-p:Version=$env:VERSION" @args
+                if ($LASTEXITCODE -ne 0) { throw "publish failed for $env:TOOL_ID" }
+              }
+              "manual" {
+                Write-Host "$env:TOOL_ID has no build step (build.kind = manual)"
+              }
+              default {
+                if (-not $tool.build.script) {
+                  throw "build.kind '$($tool.build.kind)' requires build.script"
+                }
+                & (Join-Path $toolDir ([string]$tool.build.script))
+                if ($LASTEXITCODE -ne 0) { throw "build.script failed for $env:TOOL_ID" }
+              }
+            }
+          }
+          finally {
+            Pop-Location
+          }
+
+      - name: Assert declared artifacts exist
+        shell: pwsh
+        env:
+          TOOL_ID: ${{ steps.resolve.outputs.tool-id }}
+        run: .\scripts\assert-artifacts.ps1 -ToolId $env:TOOL_ID
+
+      - name: Package the tagged tool
+        shell: pwsh
+        env:
+          TOOL_ID: ${{ steps.resolve.outputs.tool-id }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: .\scripts\package-tool.ps1 -ToolId $env:TOOL_ID -Version $env:VERSION
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOOL_ID: ${{ steps.resolve.outputs.tool-id }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:GITHUB_REF_NAME
+          $title = "$env:TOOL_ID v$env:VERSION"
+
+          gh release create $tag --verify-tag --title $title --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+
+          $assets = @(Get-ChildItem -Path "out/packages" -File | ForEach-Object { $_.FullName })
+          if ($assets.Count -eq 0) { throw "no package produced" }
+
+          gh release upload $tag $assets
+          if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+
+          Write-Host "Released $tag with $($assets.Count) asset(s)"

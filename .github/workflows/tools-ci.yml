@@ -4,7 +4,6 @@ on:
   pull_request:
   push:
     branches: [ "master" ]
-    tags: [ "tool/**" ]
   workflow_dispatch:
 
 permissions:
