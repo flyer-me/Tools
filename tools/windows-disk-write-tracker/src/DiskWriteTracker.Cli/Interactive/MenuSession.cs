@@ -1,5 +1,5 @@
-using System.Globalization;
 using DiskWriteTracker.Core.Config;
+using DiskWriteTracker.Core.Store;
 
 namespace DiskWriteTracker.Cli.Interactive;
 
@@ -64,20 +64,12 @@ internal sealed class MenuSession
 
             DateOnly? newest = null;
 
-            foreach (string file in Directory.EnumerateFiles(DataDirectory, "samples-*.jsonl"))
+            foreach (SampleFile file in SampleFile.Enumerate(DataDirectory))
             {
-                SampleCount += File.ReadLines(file).Count(line => !string.IsNullOrWhiteSpace(line));
+                SampleCount += File.ReadLines(file.Path).Count(line => !string.IsNullOrWhiteSpace(line));
 
-                string name = Path.GetFileNameWithoutExtension(file);
-                if (name.Length != 16)
-                    continue;
-
-                if (!DateOnly.TryParseExact(name.AsSpan(8), "yyyyMMdd", CultureInfo.InvariantCulture,
-                        DateTimeStyles.None, out DateOnly date))
-                    continue;
-
-                if (newest is null || date > newest.Value)
-                    newest = date;
+                if (newest is null || file.Date > newest.Value)
+                    newest = file.Date;
             }
 
             if (newest is not null)

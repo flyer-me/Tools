@@ -51,7 +51,7 @@
 
   samples-*.jsonl   每天采样到的原始数值
   logs\             运行日志
-  exports\          报表（report.html）与导出的 CSV
+  exports\          报表（report.html）与导出的 CSV（按下面设置的天数导出）
   settings.json     你的偏好设置
 
 settings.json 可以用记事本直接改：

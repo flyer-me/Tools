@@ -17,6 +17,32 @@ $exe = Join-Path $Dist 'DiskWriteTracker.exe'
 if (-not (Test-Path $exe)) { throw "找不到 $exe，请先运行 scripts\build.ps1" }
 
 $fixtures = Join-Path $repoRoot 'tests\fixtures\data'
+
+# 夹具日期是写死的（samples-YYYYMMDD.jsonl），而 --days N 是相对"今天"的窗口。
+# 早先这里写死 --days 30，夹具滑出 30 天窗口后整批断言会一起变红，
+# 而且报错看上去完全不像日期问题。窗口一律由夹具自身日期推算。
+$fixtureDates = @(Get-ChildItem -Path $fixtures -Filter 'samples-*.jsonl' | ForEach-Object {
+    [datetime]::ParseExact($_.BaseName.Substring(8), 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
+} | Sort-Object)
+if ($fixtureDates.Count -eq 0) { throw "夹具目录里没有 samples-*.jsonl：$fixtures" }
+
+$fixtureStart = $fixtureDates[0].Date
+$fixtureEnd = $fixtureDates[-1].Date
+$today = (Get-Date).Date
+
+# 覆盖全部夹具日期的窗口
+$fixtureDays = [int]($today - $fixtureStart).TotalDays + 1
+
+# 从夹具中段开始的窗口：首日的前驱落在窗口外，用来验证回读逻辑
+$midIndex = [Math]::Min(2, $fixtureDates.Count - 1)
+$midDate = $fixtureDates[$midIndex].Date
+$midDays = [int]($today - $midDate).TotalDays + 1
+
+# 夹具总行数：history 与 export --all 都应当等于它
+$fixtureLines = 0
+foreach ($f in (Get-ChildItem -Path $fixtures -Filter 'samples-*.jsonl')) {
+    $fixtureLines += @(Get-Content -LiteralPath $f.FullName | Where-Object { $_.Trim() }).Count
+}
 $work = Join-Path $env:TEMP ('dwt-verify-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 
@@ -156,7 +182,7 @@ Assert-That '未知动词仍返回 2' ($unknown.Code -eq 2) ('code=' + $unknown.
 Write-Host ''
 Write-Host '=== 2. 日增量四种边界 ===' -ForegroundColor Cyan
 
-$daily = Invoke-Exe @('daily', 'show', '--days', '30', '--json', '--data-dir', $fixtures)
+$daily = Invoke-Exe @('daily', 'show', '--days', "$fixtureDays", '--json', '--data-dir', $fixtures)
 Assert-That 'daily show 返回 0' ($daily.Code -eq 0) ($daily.Text)
 
 $stats = ($daily.Text | ConvertFrom-Json).data.stats
@@ -177,10 +203,50 @@ Assert-That '回退日增量恒为 0，不出负数' (@($stats | Where-Object { 
 Assert-That '回退日质量为 anomaly' (@($clamped | Where-Object { $_.quality -ne 'anomaly' }).Count -eq 0)
 
 Write-Host ''
+Write-Host '=== 2b. 窗口读取不丢前驱 ===' -ForegroundColor Cyan
+
+# 窗口起点落在夹具中段：首日的前驱在窗口之外，只有回读逻辑才会把它捞回来。
+# 少读一条，首日就退化成 baseline，一整天的写入量静默变 0 —— 不报错，只是数字错。
+$mid = Invoke-Exe @('daily', 'show', '--days', "$midDays", '--json', '--data-dir', $fixtures)
+Assert-That '窄窗口 daily 返回 0' ($mid.Code -eq 0) ($mid.Text)
+
+$midStats = @(($mid.Text | ConvertFrom-Json).data.stats)
+$midDateText = $midDate.ToString('yyyy-MM-dd')
+$midFirst = @($midStats | Where-Object { $_.LocalDate -eq $midDateText })
+
+Assert-That '窄窗口含窗口起点当日' ($midFirst.Count -ge 1) ("date=$midDateText")
+Assert-That '窗口首日不是基线（前驱被回读）' (
+    @($midFirst | Where-Object { $_.Method -eq 'baseline' }).Count -eq 0
+) (($midFirst | ForEach-Object { "$($_.Model):$($_.Method)" }) -join ',')
+Assert-That '窗口只含起点之后的行' (
+    @($midStats | Where-Object { [string]::CompareOrdinal($_.LocalDate, $midDateText) -lt 0 }).Count -eq 0
+) (($midStats | ForEach-Object { $_.LocalDate } | Sort-Object -Unique) -join ',')
+
+$sameAsWide = $true
+foreach ($m in $midStats) {
+    $w = $stats | Where-Object { $_.LocalDate -eq $m.LocalDate -and $_.Model -eq $m.Model }
+    if (-not $w) { $sameAsWide = $false; continue }
+    if ($w.dailyBytes -ne $m.dailyBytes -or $w.Method -ne $m.Method -or $w.GapDays -ne $m.GapDays -or $w.Quality -ne $m.Quality) {
+        $sameAsWide = $false
+    }
+}
+Assert-That '窄窗口与宽窗口在重叠日期上逐字段一致' $sameAsWide
+
+# 窗口完全落在样本之后：应当明确返回"无数据"，而不是把老数据当成窗口内的
+if ($fixtureEnd -lt $today) {
+    $tooNarrow = Invoke-Exe @('daily', 'show', '--days', '1', '--json', '--data-dir', $fixtures)
+    Assert-That '窗口内无数据时返回 4' ($tooNarrow.Code -eq 4) ('code=' + $tooNarrow.Code)
+}
+
+# history 不传 --days 时必须仍是全量：窗口化只针对按日期过滤的命令
+$historyAll = Invoke-Exe @('history', '--json', '--data-dir', $fixtures)
+Assert-That 'history 默认全量' (($historyAll.Text | ConvertFrom-Json).data.count -eq $fixtureLines) ("count=$fixtureLines")
+
+Write-Host ''
 Write-Host '=== 3. 报表离线自包含 ===' -ForegroundColor Cyan
 
 $reportPath = Join-Path $work 'report.html'
-$report = Invoke-Exe @('report', '--days', '30', '--data-dir', $fixtures, '--out', $reportPath)
+$report = Invoke-Exe @('report', '--days', "$fixtureDays", '--data-dir', $fixtures, '--out', $reportPath)
 Assert-That 'report 返回 0' ($report.Code -eq 0) ($report.Text)
 Assert-That '报表文件存在' (Test-Path $reportPath)
 
@@ -212,12 +278,12 @@ Write-Host ''
 Write-Host '=== 4. 报表固定名与归档 ===' -ForegroundColor Cyan
 
 $defaultReport = Join-Path $Dist 'data\exports\report.html'
-$first = Invoke-Exe @('report', '--days', '30')
+$first = Invoke-Exe @('report', '--days', '7')
 Assert-That '未指定 --out 时写固定名' (Test-Path $defaultReport)
 $archiveDir = Join-Path $Dist 'data\exports\archive'
 $todayArchive = Join-Path $archiveDir ('report-{0}.html' -f (Get-Date -Format 'yyyyMMdd'))
 Assert-That '生成当日归档' (Test-Path $todayArchive) ($todayArchive)
-for ($k = 0; $k -lt 2; $k++) { [void](Invoke-Exe @('report', '--days', '30')) }
+for ($k = 0; $k -lt 2; $k++) { [void](Invoke-Exe @('report', '--days', '7')) }
 $sameDay = @(Get-ChildItem -LiteralPath $archiveDir -Filter ('report-{0}.html' -f (Get-Date -Format 'yyyyMMdd')) -ErrorAction SilentlyContinue).Count
 Assert-That '同日多次生成只覆盖一份归档' ($sameDay -eq 1) ("count=$sameDay")
 
@@ -225,7 +291,7 @@ Write-Host ''
 Write-Host '=== 5. CSV 编码 ===' -ForegroundColor Cyan
 
 $csvDir = Join-Path $work 'csv'
-[void](Invoke-Exe @('export', 'csv', '--days', '30', '--data-dir', $fixtures, '--out', $csvDir))
+[void](Invoke-Exe @('export', 'csv', '--days', "$fixtureDays", '--data-dir', $fixtures, '--out', $csvDir))
 $dailyCsv = Join-Path $csvDir 'daily.csv'
 Assert-That 'daily.csv 存在' (Test-Path $dailyCsv)
 if (Test-Path $dailyCsv) {
@@ -234,6 +300,28 @@ if (Test-Path $dailyCsv) {
     $csvText = [IO.File]::ReadAllText($dailyCsv, [Text.Encoding]::UTF8)
     Assert-That 'CSV 使用 CRLF' ($csvText.Contains("`r`n"))
 }
+
+# samples.csv 过去不受 --days 约束，等于 exportDays 只对一半产物生效；
+# 现在默认与 daily.csv 同窗口，--all 才是全量。
+$narrowDir = Join-Path $work 'csv-narrow'
+[void](Invoke-Exe @('export', 'csv', '--days', "$midDays", '--data-dir', $fixtures, '--out', $narrowDir))
+$windowRows = @(Get-Content -LiteralPath (Join-Path $narrowDir 'samples.csv') | Select-Object -Skip 1 | Where-Object { $_.Trim() }).Count
+
+$expectedWindowRows = 0
+foreach ($f in (Get-ChildItem -Path $fixtures -Filter 'samples-*.jsonl')) {
+    foreach ($line in (Get-Content -LiteralPath $f.FullName | Where-Object { $_.Trim() })) {
+        if ([string]::CompareOrdinal(($line | ConvertFrom-Json).localDate, $midDateText) -ge 0) {
+            $expectedWindowRows++
+        }
+    }
+}
+
+$allCsvDir = Join-Path $work 'csv-all'
+[void](Invoke-Exe @('export', 'csv', '--all', '--data-dir', $fixtures, '--out', $allCsvDir))
+$allRows = @(Get-Content -LiteralPath (Join-Path $allCsvDir 'samples.csv') | Select-Object -Skip 1 | Where-Object { $_.Trim() }).Count
+
+Assert-That 'samples.csv 只含窗口内的行' ($windowRows -eq $expectedWindowRows) ("window=$windowRows expected=$expectedWindowRows")
+Assert-That '--all 导出全部样本' ($allRows -eq $fixtureLines) ("all=$allRows total=$fixtureLines")
 
 Write-Host ''
 Write-Host '=== 6. 并发写入锁 ===' -ForegroundColor Cyan

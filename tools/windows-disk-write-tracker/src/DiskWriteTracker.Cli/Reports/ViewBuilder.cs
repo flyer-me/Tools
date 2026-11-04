@@ -9,12 +9,19 @@ namespace DiskWriteTracker.Cli.Reports;
 /// </summary>
 internal static class ViewBuilder
 {
+    /// <summary>
+    /// 窗口起点（含）。日期口径只在这里定义一次：命令入口、日统计、导出若各算各的，
+    /// 跨零点就会一个用昨天一个用今天，窗口边界错开一天。
+    /// </summary>
+    public static string WindowStart(int days)
+        => DateOnly.FromDateTime(DateTime.Now).AddDays(-days + 1).ToString("yyyy-MM-dd");
+
     public static (IReadOnlyList<DailyStat> Stats, IReadOnlyList<DiskDailySummary> Summaries) Build(
         IReadOnlyList<SampleRecord> samples,
         int days)
     {
         var today = DateOnly.FromDateTime(DateTime.Now);
-        string from = today.AddDays(-days + 1).ToString("yyyy-MM-dd");
+        string from = WindowStart(days);
 
         var allStats = DailyAggregator.Aggregate(samples);
         var stats = allStats.Where(s => string.CompareOrdinal(s.LocalDate, from) >= 0).ToList();

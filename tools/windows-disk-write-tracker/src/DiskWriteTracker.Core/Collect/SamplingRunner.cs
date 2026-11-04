@@ -106,22 +106,14 @@ public static class SamplingRunner
         var cutoff = DateOnly.FromDateTime(DateTime.Now).AddDays(-retentionDays);
         int removed = 0;
 
-        foreach (string file in Directory.EnumerateFiles(directory, "samples-*.jsonl"))
+        foreach (SampleFile file in SampleFile.Enumerate(directory))
         {
-            string name = Path.GetFileNameWithoutExtension(file);
-            if (name.Length != 16 || !name.StartsWith("samples-", StringComparison.Ordinal))
-                continue;
-
-            if (!DateOnly.TryParseExact(name.AsSpan(8), "yyyyMMdd", CultureInfo.InvariantCulture,
-                    DateTimeStyles.None, out DateOnly date))
-                continue;
-
-            if (date >= cutoff)
+            if (file.Date >= cutoff)
                 continue;
 
             try
             {
-                File.Delete(file);
+                File.Delete(file.Path);
                 removed++;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

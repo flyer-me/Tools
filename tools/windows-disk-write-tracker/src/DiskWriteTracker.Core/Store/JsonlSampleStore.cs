@@ -92,31 +92,115 @@ public sealed class JsonlSampleStore
     public IReadOnlyList<SampleRecord> ReadAll()
     {
         var result = new List<SampleRecord>();
-        if (!System.IO.Directory.Exists(_directory))
+        foreach (SampleFile file in SampleFile.Enumerate(_directory))
+            ReadInto(file.Path, result);
+
+        SortByCapturedUtc(result);
+        return result;
+    }
+
+    /// <summary>
+    /// 只读窗口内的文件，外加窗口之前的前驱样本。
+    ///
+    /// 前驱不能简单取"前一天"：窗口前一天该盘可能读取失败（bytes=null），真实前驱在更早。
+    /// 少读一条，DailyAggregator 就会把窗口首日当成 baseline，一整天的写入量静默变成 0。
+    /// 所以规则是：继续回读更早的文件，直到窗口里出现的每块盘都拿到至少一条有效窗口前样本。
+    ///
+    /// 代价上限是 ReadAll：某块盘若从无有效读数，会一直回读到最早的文件，
+    /// 也就是退化成改造前的全量读取，不可能更慢。
+    ///
+    /// 返回结果**包含**回读进来的前驱行，调用方按日期过滤即可（日统计与报表本来就按窗口过滤）。
+    /// </summary>
+    public IReadOnlyList<SampleRecord> ReadForWindow(int days, DateOnly today)
+    {
+        if (days <= 0)
+            return ReadAll();
+
+        var result = new List<SampleRecord>();
+        List<SampleFile> files = SampleFile.Enumerate(_directory);
+        if (files.Count == 0)
             return result;
 
-        foreach (string file in System.IO.Directory.EnumerateFiles(_directory, "samples-*.jsonl").OrderBy(f => f, StringComparer.Ordinal))
+        DateOnly from = today.AddDays(-(days - 1));
+
+        int start = 0;
+        while (start < files.Count && files[start].Date < from)
+            start++;
+
+        // 窗口完全落在最新样本之后（改过系统时间，或只查最近一天而样本更早）：窗口内没有数据
+        if (start >= files.Count)
+            return result;
+
+        for (int i = start; i < files.Count; i++)
+            ReadInto(files[i].Path, result);
+
+        var disks = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var record in result)
+            disks.Add(record.DiskKey);
+
+        // 窗口内所有文件都晚于 from，因此前驱只能来自更早的文件；逐文件回读、边读边记已覆盖的盘。
+        var covered = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = start - 1; i >= 0 && covered.Count < disks.Count; i--)
         {
-            // 必须用共享模式打开：写者持 FileShare.Read 追加时，默认的独占读会让两边互锁
-            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-            using var reader = new StreamReader(stream, new UTF8Encoding(false),
-                detectEncodingFromByteOrderMarks: true);
+            int before = result.Count;
+            ReadInto(files[i].Path, result);
 
-            while (reader.ReadLine() is { } line)
+            for (int j = before; j < result.Count; j++)
             {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-
-                var record = TryParse(line);
-                if (record is not null)
-                    result.Add(record);
+                if (result[j].Bytes.HasValue)
+                    covered.Add(result[j].DiskKey);
             }
         }
 
-        result.Sort((a, b) => string.CompareOrdinal(a.CapturedUtc, b.CapturedUtc));
+        SortByCapturedUtc(result);
         return result;
     }
+
+    /// <summary>只数非空行，不解析 JSON。doctor 与菜单只要一个数量。</summary>
+    public int CountLines()
+    {
+        int count = 0;
+
+        foreach (SampleFile file in SampleFile.Enumerate(_directory))
+        {
+            try
+            {
+                foreach (string line in File.ReadLines(file.Path))
+                {
+                    if (!string.IsNullOrWhiteSpace(line))
+                        count++;
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 单个文件被占用就跳过：少几条不影响诊断，不值得让 doctor 失败
+            }
+        }
+
+        return count;
+    }
+
+    private static void ReadInto(string path, List<SampleRecord> into)
+    {
+        // 必须用共享模式打开：写者持 FileShare.Read 追加时，默认的独占读会让两边互锁
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream, new UTF8Encoding(false),
+            detectEncodingFromByteOrderMarks: true);
+
+        while (reader.ReadLine() is { } line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var record = TryParse(line);
+            if (record is not null)
+                into.Add(record);
+        }
+    }
+
+    private static void SortByCapturedUtc(List<SampleRecord> records)
+        => records.Sort(static (a, b) => string.CompareOrdinal(a.CapturedUtc, b.CapturedUtc));
 
     private static SampleRecord? TryParse(string line)
     {

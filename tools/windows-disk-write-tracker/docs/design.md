@@ -272,12 +272,25 @@ UAC 被用户取消时捕获 `Win32Exception` 1223，按「已取消」提示，
   logs\                          引擎与菜单日志
 ```
 
+### 读取只打开窗口内的文件
+
+文件名里带日期，读取时先按日期筛文件、再解析内容；**不是**每次枚举全部历史。
+
+日增量与报表要算"当天相对前一条有效读数的差值"，因此窗口读取会额外回读窗口之前的文件，
+直到窗口里出现的每块盘都拿到一条有效的前驱样本为止 —— 只多读一天是不够的：
+窗口前一天该盘可能读取失败（`bytes=null`），真实前驱在更早。少读这一条，
+`DailyAggregator` 会把窗口首日当成 `baseline`，一整天的写入量静默变成 0。
+
+回读的代价上限是改造前的全量读取（某块盘若从无有效读数就会一直回读到最早的文件），
+所以不会比"全部读一遍"更慢，只会更快。`history`、`daily rebuild`、`export --all`
+仍走全量路径，窗口化只作用于按日期过滤的命令。
+
 ---
 
 ## 验收
 
 ```powershell
-# 自动化：86 项断言
+# 自动化：96 项断言
 scripts\build.ps1            # 构建 + 发布 + 冒烟 + verify，全绿才算通过
 scripts\verify.ps1           # 只跑验收，不动产物
 
@@ -357,7 +370,7 @@ src/DiskWriteTracker.Cli/
   Reports/                    ViewBuilder / ReportWriter / ExportWriter
 scripts/
   build.ps1                   构建 + 发布 + 形态断言 + 冒烟 + 验收
-  verify.ps1                  自动化验收（87 项）
+  verify.ps1                  自动化验收（96 项）
   bootstrap-sdk.ps1           免提权安装 .NET SDK
   dotnet-install.ps1          官方 SDK 安装脚本（bootstrap 内部使用）
 docs/

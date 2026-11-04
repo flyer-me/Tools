@@ -97,11 +97,12 @@ internal static class Program
               DiskWriteTracker disks    [--json]                      枚举物理磁盘
               DiskWriteTracker probe    [--json]                      只读预览累计写入，不落盘
               DiskWriteTracker sample   [--json]                      采样一次并记录
-              DiskWriteTracker history  [--json]                      查看已记录的样本
+              DiskWriteTracker history  [--days N] [--json]           查看已记录的样本（默认全部）
               DiskWriteTracker daily show    [--days N] [--json]      查看每日增量
               DiskWriteTracker daily rebuild [--json]                 重算全部每日增量
               DiskWriteTracker report   [--days N] [--out 路径]       生成离线 HTML 报表
-              DiskWriteTracker export   csv [--out 目录] [--days N]    导出 CSV
+              DiskWriteTracker export   csv [--days N] [--all] [--out 目录]
+                                                                      导出 CSV（默认同窗口，--all 导全部历史）
               DiskWriteTracker schedule status                        查看定时任务状态
               DiskWriteTracker schedule install [--time HH:mm]        安装/更新每日任务
               DiskWriteTracker schedule uninstall [--purge-data]      卸载任务（默认保留数据）
@@ -126,7 +127,9 @@ internal static class Program
         var disks = DiskEnumerator.Enumerate();
         var config = AppConfigLoader.Load();
         var resolution = RuntimePaths.ResolveDataDirectory(DataDirOverride, config);
-        var samples = new JsonlSampleStore(resolution.Directory).ReadAll();
+
+        // 只要条数：解析全部 JSON 只为打印一个数字不值得
+        int sampleCount = new JsonlSampleStore(resolution.Directory).CountLines();
 
         if (options.Json)
         {
@@ -145,7 +148,7 @@ internal static class Program
                     dataDirectoryIsPortable = resolution.IsPortable,
                     dataDirectoryWarning = resolution.Warning,
                     migrationNote = resolution.MigrationNote,
-                    sampleCount = samples.Count,
+                    sampleCount,
                     config = new
                     {
                         sourcePath = config.SourcePath,
@@ -168,7 +171,7 @@ internal static class Program
         Console.WriteLine($"  枚举到磁盘   : {disks.Count} 块");
         Console.WriteLine($"  部署方式     : {(resolution.IsPortable ? "便携（数据跟在 exe 同级 data 目录）" : "系统目录")}");
         Console.WriteLine($"  数据目录     : {resolution.Directory}{(resolution.IsFallback ? "  [已降级]" : string.Empty)}");
-        Console.WriteLine($"  已记录样本   : {samples.Count} 条");
+        Console.WriteLine($"  已记录样本   : {sampleCount} 条");
         Console.WriteLine($"  配置文件     : {(config.SourcePath.Length > 0 && File.Exists(config.SourcePath) ? config.SourcePath : "未找到，使用内置默认值")}");
         Console.WriteLine($"  采样设置     : 每天 {config.DailyTime} ｜ 保留 {config.RetentionDays} 天 ｜ 任务超时 {config.TimeoutSeconds}s");
         if (resolution.MigrationNote is not null)
@@ -353,7 +356,16 @@ internal static class Program
 
     private static int History(CommandOptions options)
     {
-        var (resolution, samples) = LoadSamples();
+        // 帮助里一直写着 --days，代码却从没读过；补齐：0 或不给即全量
+        int days = options.GetInt("days", 0);
+        var (resolution, samples) = LoadSamples(days > 0 ? days : null);
+
+        // 窗口读取会顺带带上窗口前的前驱样本（用于算首日增量），对"看最近 N 天"是噪声
+        if (days > 0)
+        {
+            string from = WindowStart(days);
+            samples = samples.Where(r => string.CompareOrdinal(r.LocalDate, from) >= 0).ToList();
+        }
 
         if (options.Json)
         {
@@ -387,7 +399,7 @@ internal static class Program
             return 0;
         }
 
-        Console.WriteLine($"共 {samples.Count} 条样本");
+        Console.WriteLine(days > 0 ? $"共 {samples.Count} 条样本（近 {days} 天）" : $"共 {samples.Count} 条样本");
         foreach (var r in samples)
             Console.WriteLine($"  {r.CapturedLocal}  {r.Model,-24} {FormatBytes(r.Bytes),10}  {QualityLabel(r.Quality)}");
 
@@ -399,21 +411,23 @@ internal static class Program
     private static int Daily(CommandOptions options)
     {
         string sub = options.Positional.Count > 0 ? options.Positional[0].ToLowerInvariant() : "show";
-        var (_, samples) = LoadSamples();
+        int days = options.GetInt("days", 30);
+
+        // rebuild 写的是全量快照，用窗口重算会把 daily.json 写残
+        var (_, samples) = LoadSamples(sub == "rebuild" ? null : days);
 
         if (samples.Count == 0)
         {
             if (options.Json)
                 WriteJson(new { ok = false, data = new { count = 0, message = "尚无采样数据" } });
             else
-                Console.WriteLine("尚无采样数据。先运行 DiskWriteTracker sample。");
+                Console.WriteLine($"近 {days} 天没有采样数据。先运行 DiskWriteTracker sample，或用 --days 放大窗口。");
 
             return 4;
         }
 
         var stats = DailyAggregator.Aggregate(samples);
-        int days = options.GetInt("days", 30);
-        string from = DateOnly.FromDateTime(DateTime.Now).AddDays(-days + 1).ToString("yyyy-MM-dd");
+        string from = WindowStart(days);
         var filtered = stats.Where(s => string.CompareOrdinal(s.LocalDate, from) >= 0).ToList();
 
         if (sub == "rebuild")
@@ -503,8 +517,8 @@ internal static class Program
 
     private static int Report(CommandOptions options)
     {
-        var (resolution, samples) = LoadSamples();
         int days = options.GetInt("days", 90);
+        var (resolution, samples) = LoadSamples(days);
 
         if (samples.Count == 0)
         {
@@ -542,13 +556,17 @@ internal static class Program
             return 2;
         }
 
-        var (resolution, samples) = LoadSamples();
         int days = options.GetInt("days", 90);
+
+        // --all：导出全部历史样本。默认与 daily.csv 用同一个窗口，
+        // 否则 exportDays 只对一半产物生效，而全量样本在 5 分钟采样下能到几十 MB。
+        bool all = options.Has("all");
+        var (resolution, samples) = LoadSamples(all ? null : days);
 
         // 默认落数据目录下的 exports，与 report 一致。
         // 早先锚定 exe 目录，会在用户手工执行 export 时于程序目录旁边凭空长出一个 exports 文件夹。
         string dir = options.Get("out") ?? Path.Combine(resolution.Directory, "exports");
-        var outcome = ExportWriter.WriteCsv(samples, days, dir);
+        var outcome = ExportWriter.WriteCsv(samples, days, dir, all);
 
         if (options.Json)
         {
@@ -708,11 +726,20 @@ internal static class Program
 
     // ---------- 公共 ----------
 
-    private static (RuntimePaths.Resolution Resolution, IReadOnlyList<SampleRecord> Samples) LoadSamples()
+    private static (RuntimePaths.Resolution Resolution, IReadOnlyList<SampleRecord> Samples) LoadSamples(int? days = null)
     {
         var resolution = RuntimePaths.ResolveDataDirectory(DataDirOverride, AppConfigLoader.Load());
-        return (resolution, new JsonlSampleStore(resolution.Directory).ReadAll());
+        var store = new JsonlSampleStore(resolution.Directory);
+
+        // days 为空表示"要全部历史"（history / daily rebuild / export --all）。
+        // 给了窗口就只打开窗口内的文件，外加每块盘的前驱样本，让首日增量仍有基线。
+        return (resolution, days is { } window
+            ? store.ReadForWindow(window, DateOnly.FromDateTime(DateTime.Now))
+            : store.ReadAll());
     }
+
+    /// <summary>窗口起点（含）。与 ReadForWindow / ViewBuilder 用同一口径，避免各算各的错开一天。</summary>
+    private static string WindowStart(int days) => ViewBuilder.WindowStart(days);
 
     private static void WriteJson(object payload) => Console.WriteLine(JsonSerializer.Serialize(payload, JsonOptions));
 

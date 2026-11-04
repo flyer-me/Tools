@@ -23,11 +23,13 @@ internal static class ExportWriter
         "原始值", "单位", "换算系数", "累计(bytes)", "累计", "数据质量", "备注"
     ];
 
-    public static ExportOutcome WriteCsv(IReadOnlyList<SampleRecord> samples, int days, string directory)
+    public static ExportOutcome WriteCsv(
+        IReadOnlyList<SampleRecord> samples, int days, string directory, bool allSamples = false)
     {
         Directory.CreateDirectory(directory);
 
         var (stats, _) = ViewBuilder.Build(samples, days);
+        string from = ViewBuilder.WindowStart(days);
 
         var rows = new List<string[]> { DailyHeader };
 
@@ -56,6 +58,10 @@ internal static class ExportWriter
 
         foreach (var s in samples.OrderBy(x => x.CapturedUtc, StringComparer.Ordinal))
         {
+            // 窗口读取会带回窗口前的前驱样本（算首日增量用），明细里不该出现
+            if (!allSamples && string.CompareOrdinal(s.LocalDate, from) < 0)
+                continue;
+
             sampleRows.Add([
                 s.CapturedLocal,
                 s.LocalDate,

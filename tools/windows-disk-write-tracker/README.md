@@ -34,11 +34,15 @@ Double-click the executable for an 8-item menu, or call it directly:
 
 ```powershell
 .\src\dist\DiskWriteTracker.exe sample
+.\src\dist\DiskWriteTracker.exe history --days 30
 .\src\dist\DiskWriteTracker.exe daily show --days 30
 .\src\dist\DiskWriteTracker.exe report --days 90
-.\src\dist\DiskWriteTracker.exe export csv --days 90
+.\src\dist\DiskWriteTracker.exe export csv --days 90      # --all 导出全部历史
 .\src\dist\DiskWriteTracker.exe schedule install --time 00:05
 ```
+
+`history` prints everything unless `--days` is given. `export csv` follows `--days` for both
+files; `--all` writes every sample instead.
 
 Add `--json` for machine-readable output. `--data-dir <path>` overrides the data directory.
 

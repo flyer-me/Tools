@@ -71,7 +71,7 @@ internal static class MenuActions
             return OpenReport(session);
         }
 
-        var samples = LoadSamples(session);
+        var samples = LoadSamples(session, session.Settings.ReportDays);
         if (samples.Count == 0)
         {
             ConsoleUi.Warn("  还没有采样数据。先选 1 采样一次。");
@@ -99,7 +99,7 @@ internal static class MenuActions
 
     public static int ExportCsv(MenuSession session)
     {
-        var samples = LoadSamples(session);
+        var samples = LoadSamples(session, session.Settings.ExportDays);
         if (samples.Count == 0)
         {
             ConsoleUi.Warn("  还没有采样数据。先选 1 采样一次。");
@@ -318,11 +318,12 @@ internal static class MenuActions
         return 0;
     }
 
-    private static IReadOnlyList<SampleRecord> LoadSamples(MenuSession session)
+    private static IReadOnlyList<SampleRecord> LoadSamples(MenuSession session, int days)
     {
         try
         {
-            return new JsonlSampleStore(session.DataDirectory).ReadAll();
+            return new JsonlSampleStore(session.DataDirectory)
+                .ReadForWindow(days, DateOnly.FromDateTime(DateTime.Now));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
