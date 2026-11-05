@@ -8,9 +8,9 @@
 ## Pre-release steps
 
 1. Update tool README and changelog entries.
-2. Run `powershell -ExecutionPolicy Bypass -File .\\scripts\\validate-tools.ps1`.
+2. Run `pwsh -File .\\scripts\\validate-tools.ps1`.
 3. Build the changed tool, then run
-   `powershell -ExecutionPolicy Bypass -File .\\scripts\\assert-artifacts.ps1 -ToolId <tool-id>`.
+   `pwsh -File .\\scripts\\assert-artifacts.ps1 -ToolId <tool-id>`.
 4. Confirm `git status --short` is clean.
 
 ## Release steps
