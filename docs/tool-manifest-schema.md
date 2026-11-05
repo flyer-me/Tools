@@ -146,6 +146,23 @@ it. They are separate on purpose — a free tool can still rewrite `bcdedit` set
   (for example a `data/` folder that switches a tool into portable mode).
 - Packaging collects files by these patterns only; anything not declared is not shipped.
 
+## New tool conventions
+
+- Start with `pwsh -File .\scripts\new-tool.ps1 -ToolId <tool-id>` — one command to
+  a validating baseline, then replace the stub and the placeholder fields.
+- `runtime.entry` file names use ASCII kebab-case (`disable-mpo.ps1`, not
+  `禁用MPO.ps1`). Chinese semantics belong in `displayName` and the README.
+  Non-ASCII paths are a known encoding hazard on Windows (`cmd /c`, console code
+  pages, zip tooling). Existing tools are not forced to rename; new ones must comply.
+- Engine contract: governance scripts (`scripts/*.ps1`) run under PowerShell 7
+  (`pwsh`) and require it. Tool scripts that end users launch should stay
+  compatible with built-in Windows PowerShell 5.1 unless the tool README says
+  otherwise — users' machines always have 5.1, not necessarily 7.
+- Reserved build kinds: `node` / `go` / `rust` are driven through `build.script`
+  wrappers exactly like `python` / `powershell` / `batch` — no dedicated dispatch.
+  Reserved runtime kinds: `container` / `library` are accepted by the schema but
+  not yet implemented anywhere in the pipeline.
+
 ## Example
 
 ```json

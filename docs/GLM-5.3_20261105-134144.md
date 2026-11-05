@@ -173,6 +173,8 @@
 
 ### 任务 2.6 接入约定文档化
 
+> **状态：✅ 已完成（2026-11-05 15:40）**。schema 文档新增 `## New tool conventions`：脚手架入口、新工具 entry 文件名 ASCII kebab-case（存量不强制改名）、双引擎契约（治理脚本 pwsh 7 / 终端用户脚本 5.1 兼容——来自跨平台评估结论）、保留 kind 的真实状态（node/go/rust 经 build.script 驱动；container/library 未实现）。
+
 1. 新增工具的 runtime entry 文件名使用 ASCII kebab-case；中文语义放 `displayName` 与 README。存量中文文件名工具不强制改名（能跑就不动）。
 2. 保留值声明：`node` / `go` / `rust` = 经 `build.script` 驱动，无专用分派；`container` / `library` = 保留未实现。
 3. 落点：`docs/tool-manifest-schema.md` 新增 `## New tool conventions` 一节。
