@@ -339,3 +339,10 @@ $outDir = Join-Path $repoRoot "out"
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 $index | ConvertTo-Json -Depth 8 | Set-Content -Path (Join-Path $outDir "tool-index.json") -Encoding UTF8
 Write-Host "Validated $($index.Count) tools with manifest schema $supportedManifestVersion."
+
+# 索引概览：工具清单只在这里生成（out/tool-index.json + 控制台），任何文档不维护手工索引。
+Write-Host ""
+Write-Host "Tool index:"
+foreach ($t in $index) {
+    Write-Host ("  {0,-32} risk={1,-9} build={2,-14} runtime={3}" -f $t.toolId, $t.risk, $t.build.kind, $t.runtime.kind)
+}

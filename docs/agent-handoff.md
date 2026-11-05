@@ -35,8 +35,10 @@ Use this checklist when handing work to another agent.
 4. Add tool `README.md` with run instructions and a `## Risk Notice` section.
 5. Run `pwsh -File .\scripts\validate-tools.ps1`.
 6. Build the tool, then run `.\scripts\assert-artifacts.ps1` to confirm the declared outputs exist.
-7. Update root `README.md` tool index.
-8. Record change in `CHANGELOG.md` under `Unreleased`.
+7. Record change in `CHANGELOG.md` under `Unreleased`.
+
+The tool list is not maintained anywhere by hand: `validate-tools.ps1` prints the
+index and writes `out/tool-index.json`.
 
 ## Handoff note format
 

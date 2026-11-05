@@ -46,6 +46,8 @@
 
 ### 任务 1.1 移除手工工具索引（D1）
 
+> **状态：✅ 已完成（2026-11-05 14:30）**。README 索引表已删除并替换为 `## Enumerating tools`；validate 末尾打印每工具一行概览；agent-handoff 第 7 步（更新 README 索引）已移除；CHANGELOG 已记录。
+
 **动机**：根 README 的 Tool Index 表是全仓唯一需要人工同步的清单，历史上已发生过漏登记（CHANGELOG 有记录）；工具增长无止境，人工索引必然腐化。
 
 **动作**：

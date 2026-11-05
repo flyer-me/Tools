@@ -18,6 +18,7 @@ All notable changes to this repository will be documented in this file.
 - Added `windows-remove-org-restrictions` to the index; it existed on disk but was never documented.
 
 ### Changed
+- Removed the hand-maintained tool index from the root README. The tool list is now generated only by `validate-tools.ps1` (console overview plus `out/tool-index.json`); no document keeps a manual tool list.
 - Tool layout is now strictly flat: `tools/<tool-id>/tool.manifest.json`, exactly one level. The validator rejects nested manifests, requires `toolId` to equal the directory name, and requires kebab-case.
 - Renamed `hs2modpackanalyzer` to `hs2-modpack-analyzer` so ids read the same way across the repo.
 - Upgraded tool manifest schema to `2.1`: `runtime.entry` is a path contract rather than a "must already exist" requirement, and `build.script` / `build.outputDir` describe non-dotnet builds.
