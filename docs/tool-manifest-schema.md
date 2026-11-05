@@ -12,7 +12,7 @@ validator and the release tag format would then disagree with.
 
 ## Required fields
 
-- `manifestVersion`: string, must be `2.1`
+- `manifestVersion`: string, must be `2.2`
 - `toolId`: string, kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`), must equal the tool directory name
 - `displayName`: human-readable name
 - `licenseTier`: `free` / `free-limited` / `paid` — the distribution license tier.
@@ -167,7 +167,7 @@ it. They are separate on purpose — a free tool can still rewrite `bcdedit` set
 
 ```json
 {
-  "manifestVersion": "2.1",
+  "manifestVersion": "2.2",
   "toolId": "hs2-modpack-analyzer",
   "displayName": "HS2 Modpack Analyzer",
   "licenseTier": "free",

@@ -16,12 +16,12 @@
 
 ## 维护者决策（方案依据，已定）
 
-| # | 决策 | 落点 |
-|---|---|---|
-| D1 | 工具索引必须自生成：根 README 不维护索引，任何文档不得写死工具清单 | 任务 1.1 |
+| #  | 决策                                                                        | 落点             |
+| -- | ------------------------------------------------------------------------- | -------------- |
+| D1 | 工具索引必须自生成：根 README 不维护索引，任何文档不得写死工具清单                                     | 任务 1.1         |
 | D2 | 测试的"运行"由仓库统一控制，测试的"代码"归工具特定；修改时尽量保原测试与自定义构建不失效；无选择才做破坏性更新；最终交付 exe 必须功能正常 | 任务 2.1，不变量 4/8 |
-| D3 | `licenseTier` = 授权层级（免费无限 / 免费有限 / 付费），实现方式权衡中 | 任务 2.2 |
-| D4 | 目标：新工具接入极简；需要闭源二进制工具的组织与交付方案 | 任务 2.3、2.4 |
+| D3 | `licenseTier` = 授权层级（免费无限 / 免费有限 / 付费），实现方式权衡中                            | 任务 2.2         |
+| D4 | 目标：新工具接入极简；需要闭源二进制工具的组织与交付方案                                              | 任务 2.3、2.4     |
 
 ## 不变量（任何步骤不得破坏）
 
@@ -53,6 +53,7 @@
 **动机**：根 README 的 Tool Index 表是全仓唯一需要人工同步的清单，历史上已发生过漏登记（CHANGELOG 有记录）；工具增长无止境，人工索引必然腐化。
 
 **动作**：
+
 1. 删除根 `README.md` 的 `## Tool Index` 整节；`Repository Conventions` 及其余小节保留。
 2. README 增加一小节 `## Enumerating tools`：说明工具清单由 validate 生成——`pwsh -File .\scripts\validate-tools.ps1` 产出 `out/tool-index.json` 并在控制台打印概览。
 3. `validate-tools.ps1` 成功路径末尾打印索引概览（每工具一行：`toolId / risk / build.kind / runtime.kind`，约 10 行代码）——给人类即时视图，替代 README 表。
@@ -80,6 +81,7 @@
 **动机**：决策 D2 明确保留工具特定的构建/测试脚本；原"双构建入口"问题改由"接线"解决（任务 2.1），而非删除。本任务只剩定位澄清。
 
 **动作**：
+
 1. DWT `README.md` 增改 `## Build & test` 一节，写清三条定位：
    - 发布与 CI 路径 = 仓库根 `scripts/build-tool.ps1`（含 verify 门禁，见任务 2.1）；
    - `tools/build.ps1` 与 `tools/verify.ps1` 是本工具的自定义构建/验收脚本，本地可直接使用；
@@ -101,6 +103,7 @@
 **动机**：当前发布链路只证明"产物存在"，不证明"产物能用"。DWT 的 `tools/verify.ps1`（fixture 行为验收，27 KB）是现成的工具特定测试代码，却从不被任何流水线执行。D2 的模型即：治理层决定"何时跑测试"（构建后、发布前、本地与 CI 同一入口），工具自己决定"测试是什么"。
 
 **动作**：
+
 1. `docs/tool-manifest-schema.md` 升 2.2：新增可选 `build.verify`——相对路径，指向工具目录内的 `.ps1`；语义 = 构建成功后必须通过的验收断言；**约束 = 必须可在干净 CI 机器上安全运行**（只读/离线；破坏性检查属于手工验收，不进 verify）。文档写明这是"统一控制、工具特定代码"的接缝。
 2. `validate-tools.ps1`：`$supportedManifestVersion` 升 `"2.2"`；对 `build.verify` 复用 `build.script` 的现成校验实现（存在、相对路径、不逃逸工具目录）。
 3. `build-tool.ps1`：构建成功（或 manual skip）之后，若声明了 `build.verify` 则执行 `& pwsh -NoProfile -File <verify>`，非零退出码即失败。对 manual 工具同样生效；两类 CI workflow 零改动自动获得该门禁（单一分派入口的设计收益）。
@@ -118,6 +121,7 @@
 **判断（此字段是否必要）**：**保留，但必须立即获得真实消费者，否则是装饰性字段**。在当前"GitHub 公开 Release"的分发模型里，不引入支付系统就能真实执行的层级语义只有一个——**发布通道门禁**：免费工具走公开 release，受限/付费工具不进公开渠道。工具内订阅校验（license key、在线授权）超出本仓库职责，属远期路线。
 
 **动作**：
+
 1. schema 2.2 重定义枚举：`free`（免费无限）/ `free-limited`（免费有限）/ `paid`（付费）。语义 = 分发授权层级，enforcement 点 = release 工作流。
 2. `login-accessibility-cmd-launch` 的 `restricted` → `free-limited`（唯一现存非 free 值）。
 3. `validate-tools.ps1` 增加 licenseTier 枚举校验（当前只查非空）。
@@ -136,6 +140,7 @@
 **对"当前能否做到接入极简"的回答**：接近但未到。manual 类工具今天已只要四步（建目录、写 manifest、写 README、validate 绿），剩余摩擦是 manifest 样板与流程记忆。本任务把"从零到绿色基线"压缩为一条命令。
 
 **动作**：
+
 1. 新增 `scripts/new-tool.ps1`（约 80 行，全仓唯一新增脚本）：`-ToolId <kebab-id>` → 校验命名 → 创建 `tools/<id>/`、`tool.manifest.json`（2.2 / manual / low 占位）、`README.md` 骨架（含 `## Risk Notice` 模板与填写指引）、`scripts/run.ps1` 桩（保证 manual 的 entry 存在性校验立即通过）→ 末尾提示"运行 validate 查看基线；替换桩脚本与占位字段"。
 2. 与"少脚本"偏好的权衡显式声明：该脚本是接入体验的杠杆点——纯生成、无依赖、不改既有行为；若不采纳，替代方案是 docs 内的模板清单（样板错误仍会发生，收益打折）。
 3. `docs/agent-handoff.md` 流程相应简化：1) `new-tool.ps1 -ToolId <id>`；2) 替换桩与字段；3) validate；4)（可构建的工具）build + assert；5) CHANGELOG。
@@ -151,6 +156,7 @@
 **关键事实**：现有管道的 validate/assert 职责切分**已经支持**这种形态——工具只要不是 manual kind，entry 存在性就不在静态阶段要求，而在装配后由 assert-artifacts 强制。缺的只是一个显式 kind 与交付通道决策。
 
 **动作**：
+
 1. schema 2.2 新增 `build.kind: binary`：语义 = 无构建步骤、产物由外部供给；可选声明 `build.script`（装配脚本：从私有存储下载或从本地路径复制进 `dist/`）；entry / artifacts 存在性只在 assert-artifacts 阶段强制。
 2. `validate-tools.ps1`：将 `binary` 加入"不强制 build.script"的豁免清单（与 manual 同列）；entry 存在性校验对 binary 不适用（同其他非 manual kind）。
 3. 交付通道（按推荐序，写入 `docs/release-policy.md`）：
@@ -173,6 +179,7 @@
 
 **验收**：`build-tool.ps1 -ToolId windows-disk-write-tracker` 产物路径与内容不变，assert-artifacts + verify（任务 2.1）双确认。
 
+
 ### 任务 2.6 接入约定文档化
 
 > **状态：✅ 已完成（2026-11-05 15:40）**。schema 文档新增 `## New tool conventions`：脚手架入口、新工具 entry 文件名 ASCII kebab-case（存量不强制改名）、双引擎契约（治理脚本 pwsh 7 / 终端用户脚本 5.1 兼容——来自跨平台评估结论）、保留 kind 的真实状态（node/go/rust 经 build.script 驱动；container/library 未实现）。
@@ -187,29 +194,29 @@
 
 > **处置记录（2026-11-05）**：本轮未执行。理由：3.1 枚举口径未变更，不触发；3.2 的触发条件（治理脚本大改）虽在 schema 2.2 升级中部分满足，但本轮重构已用临时负向测试覆盖了关键路径（非法 tier 红、verify 门禁失败传导、脚手架往返、binary 夹具全链路），固化 fixture 测试与维护者"少脚本"偏好冲突，留待下次治理脚本大改时再议；3.3 需用户确认且 D2 语境下默认保留现状；3.4 CI 未变慢，不触发。
 
-| 任务 | 内容 | 触发条件 |
-|---|---|---|
+| 任务  | 内容                                                                                      | 触发条件                                                         |
+| --- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
 | 3.1 | manifest 枚举去重：`scripts/lib/manifest.ps1`（dot-source 单文件），validate / assert / package 共用 | 枚举口径再次变更时；仅一处消费变化时不做——"少脚本"偏好下，注释锚定三处各约 10 行的重复是可接受的 KISS 权衡 |
-| 3.2 | 校验器 fixture 测试：1 个合法 + 4 个非法 manifest（嵌套 / toolId 不符 / low 含特权命令 / 缺 Risk Notice） | 治理脚本下次大改时（schema 2.2 升级顺手做） |
-| 3.3 | DWT vendor installer 瘦身：`bootstrap-sdk.ps1` 改为按需下载 `dotnet-install.ps1` 而非维护 76 KB 副本 | 需用户确认；D2 语境下默认保留现状 |
-| 3.4 | dotnet 工具启用 `packages.lock.json`，恢复 `setup-dotnet` 缓存 | CI 变慢时 |
+| 3.2 | 校验器 fixture 测试：1 个合法 + 4 个非法 manifest（嵌套 / toolId 不符 / low 含特权命令 / 缺 Risk Notice）       | 治理脚本下次大改时（schema 2.2 升级顺手做）                                  |
+| 3.3 | DWT vendor installer 瘦身：`bootstrap-sdk.ps1` 改为按需下载 `dotnet-install.ps1` 而非维护 76 KB 副本   | 需用户确认；D2 语境下默认保留现状                                           |
+| 3.4 | dotnet 工具启用 `packages.lock.json`，恢复 `setup-dotnet` 缓存                                   | CI 变慢时                                                       |
 
 ---
 
 ## 问题 → 方案映射
 
-| 问题 | 方案 | 阶段 |
-|---|---|---|
-| 手工索引漂移（历史已发生） | 1.1 索引自生成 | 1 |
-| tempbin 567.9 MB 本地残渣 | 1.2 | 1 |
-| DWT 内部脚本定位不清 | 1.3 定位声明 + 2.1 接线 | 1/2 |
-| 验收断言未进流水线（只证存在、不证能用） | 2.1 `build.verify` 统一测试控制 | 2 |
-| `licenseTier` 无语义无消费者 | 2.2 三档枚举 + draft 门禁 | 2 |
-| 接入样板摩擦 | 2.3 `new-tool.ps1` | 2 |
-| 闭源二进制无组织方案 | 2.4 `binary` kind + 交付通道 | 2 |
-| 发布属性 manifest/csxproj 双写 | 2.5 | 2 |
-| entry 文件名编码风险；保留 kind 未声明 | 2.6 | 2 |
-| 枚举重复 / 校验器无测试 / vendor 瘦身 / 锁文件 | 3.1–3.4 | 3 |
+| 问题                              | 方案                        | 阶段  |
+| ------------------------------- | ------------------------- | --- |
+| 手工索引漂移（历史已发生）                   | 1.1 索引自生成                 | 1   |
+| tempbin 567.9 MB 本地残渣           | 1.2                       | 1   |
+| DWT 内部脚本定位不清                    | 1.3 定位声明 + 2.1 接线         | 1/2 |
+| 验收断言未进流水线（只证存在、不证能用）            | 2.1 `build.verify` 统一测试控制 | 2   |
+| `licenseTier` 无语义无消费者           | 2.2 三档枚举 + draft 门禁       | 2   |
+| 接入样板摩擦                          | 2.3 `new-tool.ps1`        | 2   |
+| 闭源二进制无组织方案                      | 2.4 `binary` kind + 交付通道  | 2   |
+| 发布属性 manifest/csxproj 双写        | 2.5                       | 2   |
+| entry 文件名编码风险；保留 kind 未声明       | 2.6                       | 2   |
+| 枚举重复 / 校验器无测试 / vendor 瘦身 / 锁文件 | 3.1–3.4                   | 3   |
 
 ---
 
