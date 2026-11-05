@@ -5,6 +5,7 @@
 **/.vs/
 # 代理工具的本地状态（工作树、本地设置），不属于仓库内容
 /.claude/
+/.workbuddy/
 /.dotnet/
 /out/
 /tempbin/

@@ -83,6 +83,15 @@ dist\
 
 ## 构建
 
+**发布与 CI 路径**：仓库根 `scripts\build-tool.ps1 -ToolId windows-disk-write-tracker`。
+它是本地与 CI 共享的唯一构建分派入口；manifest 声明了 `build.verify` 后，
+构建成功会自动执行 `tools\verify.ps1` 的验收断言（非零退出码即失败）。
+
+`tools\` 下的脚本是本工具的自定义构建与验收资产，本地可直接使用：
+`build.ps1`（构建 + 发布 + 冒烟 + 验收）、`verify.ps1`（只跑验收，不动产物）、
+`bootstrap-sdk.ps1` + `dotnet-install.ps1`（无全局 SDK 的本机环境按需安装）。
+它们不参与发布管道——发布只走根分派器加 verify 门禁。
+
 ```powershell
 # 已有可用 SDK 就跳过；没有才免提权装到当前用户目录
 powershell -ExecutionPolicy Bypass -File tools\bootstrap-sdk.ps1

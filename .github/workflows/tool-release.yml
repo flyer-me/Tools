@@ -46,7 +46,8 @@ jobs:
 
           "tool-id=$toolId" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "Resolved $toolId v$version"
+          "license-tier=$($manifest.licenseTier)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Resolved $toolId v$version (licenseTier: $($manifest.licenseTier))"
 
       - name: Refuse to overwrite an existing release
         shell: pwsh
@@ -104,12 +105,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TOOL_ID: ${{ steps.resolve.outputs.tool-id }}
           VERSION: ${{ steps.resolve.outputs.version }}
+          LICENSE_TIER: ${{ steps.resolve.outputs.license-tier }}
         run: |
           $ErrorActionPreference = "Stop"
           $tag = $env:GITHUB_REF_NAME
           $title = "$env:TOOL_ID v$env:VERSION"
 
-          gh release create $tag --verify-tag --title $title --generate-notes
+          # licenseTier 门禁：free 走公开 release；free-limited / paid 只发 draft
+          # （资产照常上传，公开不可见，转化或转移是维护者的显式动作）。
+          $releaseArgs = @("release", "create", $tag, "--verify-tag", "--title", $title, "--generate-notes")
+          if ($env:LICENSE_TIER -ne "free") { $releaseArgs += "--draft" }
+          gh @releaseArgs
           if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
 
           $assets = @(Get-ChildItem -Path "out/packages" -File | ForEach-Object { $_.FullName })

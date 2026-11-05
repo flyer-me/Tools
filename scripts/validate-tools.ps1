@@ -4,12 +4,15 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot "tools"
 
-$supportedManifestVersion = "2.1"
+$supportedManifestVersion = "2.2"
 $supportedRuntimeKinds = @("script", "exe", "container", "library")
-$supportedBuildKinds = @("dotnet-msbuild", "powershell", "batch", "node", "python", "go", "rust", "manual")
+$supportedBuildKinds = @("dotnet-msbuild", "powershell", "batch", "node", "python", "go", "rust", "manual", "binary")
 $supportedScriptExtensions = @(".ps1", ".bat", ".cmd")
 # licenseTier 说的是授权，risk 说的是这台机器被改动的程度，两者不能互相顶替。
 $supportedRiskLevels = @("low", "elevated")
+# licenseTier 是分发授权层级：free（免费无限）/ free-limited（免费有限）/ paid（付费）。
+# enforcement 只在 release 工作流：非 free 只发 draft；本仓库不做工具内许可校验。
+$supportedLicenseTiers = @("free", "free-limited", "paid")
 
 # "这台机器被改了"的强信号，不是完整的危险命令库。
 # 刻意不收 format / Remove-Item 这类词：它们在没有上下文时误报太多，
@@ -108,6 +111,9 @@ foreach ($toolDirInfo in $toolDirs) {
     if ([string]::IsNullOrWhiteSpace([string]$tool.licenseTier)) {
         $errors.Add("$($manifestPath): licenseTier cannot be empty")
     }
+    elseif ($tool.licenseTier -notin $supportedLicenseTiers) {
+        $errors.Add("$($manifestPath): unsupported licenseTier '$($tool.licenseTier)' (expected: $($supportedLicenseTiers -join ', '))")
+    }
 
     $riskLevel = if ($tool.PSObject.Properties.Name -contains "risk") { [string]$tool.risk } else { "" }
     if ($riskLevel -notin $supportedRiskLevels) {
@@ -198,8 +204,32 @@ foreach ($toolDirInfo in $toolDirs) {
             }
         }
     }
-    elseif ($buildKind -notin @("dotnet-msbuild", "manual")) {
+    # binary（闭源二进制工具）与 manual 一样不强制 build.script：
+    # 声明了就是装配脚本（从私有存储/本地路径把产物放进 dist/），不声明就是纯手工供给。
+    elseif ($buildKind -notin @("dotnet-msbuild", "manual", "binary")) {
         $errors.Add("$($manifestPath): build.kind '$buildKind' requires build.script")
+    }
+
+    # build.verify 是构建后的验收断言（统一测试控制的接缝）：治理层决定"何时跑"
+    # （构建成功后、发布前，本地与 CI 同一入口），工具自己决定"断言是什么"。
+    # 可选；一旦声明就必须是工具目录内、真实存在的 .ps1。
+    if ($tool.build.PSObject.Properties.Name -contains "verify" -and -not [string]::IsNullOrWhiteSpace([string]$tool.build.verify)) {
+        $verifyRel = [string]$tool.build.verify
+        if ([System.IO.Path]::IsPathRooted($verifyRel)) {
+            $errors.Add("$($manifestPath): build.verify must be a relative path, got '$verifyRel'")
+        }
+        else {
+            $verifyPath = [System.IO.Path]::GetFullPath((Join-Path $toolDir $verifyRel))
+            if (-not $verifyPath.StartsWith($toolDirFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $errors.Add("$($manifestPath): build.verify escapes the tool directory '$verifyRel'")
+            }
+            elseif (-not (Test-Path -LiteralPath $verifyPath -PathType Leaf)) {
+                $errors.Add("$($manifestPath): build.verify not found '$verifyRel'")
+            }
+            elseif ([System.IO.Path]::GetExtension($verifyPath).ToLowerInvariant() -ne ".ps1") {
+                $errors.Add("$($manifestPath): build.verify must be a .ps1 script, got '$verifyRel'")
+            }
+        }
     }
 
     if ($runtimeKind -eq "script") {
@@ -339,3 +369,10 @@ $outDir = Join-Path $repoRoot "out"
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 $index | ConvertTo-Json -Depth 8 | Set-Content -Path (Join-Path $outDir "tool-index.json") -Encoding UTF8
 Write-Host "Validated $($index.Count) tools with manifest schema $supportedManifestVersion."
+
+# 索引概览：工具清单只在这里生成（out/tool-index.json + 控制台），任何文档不维护手工索引。
+Write-Host ""
+Write-Host "Tool index:"
+foreach ($t in $index) {
+    Write-Host ("  {0,-34} risk={1,-9} build={2,-14} runtime={3}" -f $t.toolId, $t.risk, $t.build.kind, $t.runtime.kind)
+}

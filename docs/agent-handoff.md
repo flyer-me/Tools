@@ -29,14 +29,18 @@ Use this checklist when handing work to another agent.
 
 ## Independent New-Tool Flow
 
-1. Create `tools/<tool-id>/` (kebab-case, matches the `toolId` you are about to declare).
-2. Add `tool.manifest.json` with schema `2.1`.
-3. Fill `build/runtime/artifacts` and `risk` completely.
-4. Add tool `README.md` with run instructions and a `## Risk Notice` section.
-5. Run `pwsh -File .\scripts\validate-tools.ps1`.
-6. Build the tool, then run `.\scripts\assert-artifacts.ps1` to confirm the declared outputs exist.
-7. Update root `README.md` tool index.
-8. Record change in `CHANGELOG.md` under `Unreleased`.
+1. `pwsh -File .\scripts\new-tool.ps1 -ToolId <tool-id>` — scaffolds the directory,
+   a schema-2.2 manifest, a README skeleton and a stub entry script. The baseline
+   validates immediately.
+2. Replace the stub (`scripts/run.ps1`) and fill in the manifest fields
+   (`displayName` / `licenseTier` / `risk` / `build` / `runtime` / `artifacts`).
+3. Run `pwsh -File .\scripts\validate-tools.ps1`.
+4. For buildable tools: `pwsh -File .\scripts\build-tool.ps1 -ToolId <tool-id>`,
+   then `.\scripts\assert-artifacts.ps1 -ToolId <tool-id>`.
+5. Record change in `CHANGELOG.md` under `Unreleased`.
+
+The tool list is not maintained anywhere by hand: `validate-tools.ps1` prints the
+index and writes `out/tool-index.json`.
 
 ## Handoff note format
 

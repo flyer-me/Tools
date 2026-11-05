@@ -176,21 +176,48 @@ foreach ($toolDirInfo in $toolDirs) {
     $kind = [string]$tool.build.kind
     Write-Host "== $id ($kind)"
 
-    if ($kind -eq "manual") {
-        Write-Host "  skip: build.kind is 'manual'"
-        continue
-    }
+    $hasBuildScript = ($tool.build.PSObject.Properties.Name -contains "script") -and -not [string]::IsNullOrWhiteSpace([string]$tool.build.script)
 
-    if ($kind -eq "dotnet-msbuild") {
-        Invoke-DotnetBuild -ToolDir $toolDirInfo.FullName -Build $tool.build -Id $id
+    if ($kind -eq "manual" -or ($kind -eq "binary" -and -not $hasBuildScript)) {
+        # manual 没有构建；binary 未声明装配脚本时产物由外部供给，同样没有构建步骤。
+        # binary 声明了 build.script 则走脚本装配（下载/复制进 dist/）。
+        Write-Host "  skip: no build step"
     }
     else {
-        $scriptRel = ""
-        if ($tool.build.PSObject.Properties.Name -contains "script") { $scriptRel = [string]$tool.build.script }
-        Invoke-ScriptBuild -ToolDir $toolDirInfo.FullName -ScriptRel $scriptRel -Id $id
+        if ($kind -eq "dotnet-msbuild") {
+            Invoke-DotnetBuild -ToolDir $toolDirInfo.FullName -Build $tool.build -Id $id
+        }
+        else {
+            $scriptRel = ""
+            if ($hasBuildScript) { $scriptRel = [string]$tool.build.script }
+            Invoke-ScriptBuild -ToolDir $toolDirInfo.FullName -ScriptRel $scriptRel -Id $id
+        }
+        $built++
     }
 
-    $built++
+    # 统一测试控制：构建（或 manual 跳过）之后，声明了 build.verify 的工具必须通过其验收断言。
+    # 断言脚本由工具自己提供，且必须能在干净 CI 机器上安全运行；非零退出码即失败。
+    if (($tool.build.PSObject.Properties.Name -contains "verify") -and -not [string]::IsNullOrWhiteSpace([string]$tool.build.verify)) {
+        $verifyRel = [string]$tool.build.verify
+        $verifyPath = [System.IO.Path]::GetFullPath((Join-Path $toolDirInfo.FullName $verifyRel))
+        $toolDirFull = [System.IO.Path]::GetFullPath($toolDirInfo.FullName).TrimEnd('\', '/')
+        if (-not $verifyPath.StartsWith($toolDirFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "build.verify escapes the tool directory ($Id): $verifyRel"
+        }
+        if (-not (Test-Path -LiteralPath $verifyPath -PathType Leaf)) {
+            throw "build.verify not found ($Id): $verifyRel"
+        }
+        Write-Host "  verify: $verifyRel"
+        # 与构建相同：验收脚本可能往 stderr 打进度，只按退出码判定。
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & pwsh -NoProfile -File $verifyPath 2>&1 | ForEach-Object { Write-Host "    $_" }
+            $verifyExit = $LASTEXITCODE
+        }
+        finally { $ErrorActionPreference = $previousEap }
+        if ($verifyExit -ne 0) { throw "verify failed for $Id (exit $verifyExit)" }
+    }
 }
 
 Write-Host "Built $built tool(s)."

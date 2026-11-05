@@ -7,18 +7,15 @@ a `tool.manifest.json` at its root. Nothing is nested, nothing is grouped.
 Source, scripts, docs and build configuration live here. Distribution binaries are
 produced by CI and attached to releases — they are not committed.
 
-## Tool Index
+## Enumerating tools
 
-| Tool ID | Runtime | Build | Risk | Status |
-|---|---|---|---|---|
-| `hs2-missing-mods-downloader` | `script` | `python` | low | Active |
-| `hs2-modpack-analyzer` | `exe` | `dotnet-msbuild` | low | Active |
-| `login-accessibility-cmd-launch` | `script` | `manual` | **elevated** | Active |
-| `windows-disk-write-tracker` | `exe` | `dotnet-msbuild` | low | Active |
-| `windows-mpo-stability-fix` | `script` | `manual` | **elevated** | Active |
-| `windows-remove-org-restrictions` | `script` | `manual` | **elevated** | Active |
-| `windows-startmenu-search-slow-fix` | `script` | `manual` | **elevated** | Active |
-| `windows-timer-tweak` | `script` | `manual` | **elevated** | Active |
+The tool list is generated, never hand-maintained. A manual index in any document
+would drift; the validator is the single source — it prints a per-tool overview and
+writes `out/tool-index.json`:
+
+```powershell
+pwsh -File .\scripts\validate-tools.ps1
+```
 
 `risk` is not `licenseTier`. `low` tools read system state or write inside their own
 directory. `elevated` tools need administrator rights, write to `HKLM`, change boot
@@ -30,7 +27,7 @@ running one.
 - A tool is a directory directly under `tools/`. The directory name **is** the
   `toolId`, and `toolId` must be kebab-case. Both rules are enforced by the
   validator, not by this document.
-- Every tool must include a `tool.manifest.json` following schema `2.1`.
+- Every tool must include a `tool.manifest.json` following schema `2.2`.
 - Release tags use: `tool/<tool-id>/vX.Y.Z`. One tag releases exactly one tool.
 - `dist/` directories are build output and are gitignored, with one exception:
   hand-maintained launcher scripts under `dist/` stay in Git.

@@ -5,6 +5,11 @@ All notable changes to this repository will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Schema `2.2`: optional `build.verify` — a tool-specific acceptance script that `build-tool.ps1` runs after a successful build (also for `manual` tools). Uniform test control: the governance layer decides when tests run, each tool decides what its assertions are; both CI workflows get the gate with zero workflow changes. `windows-disk-write-tracker` now declares `tools/verify.ps1` (114 assertions) as its gate.
+- `licenseTier` redefined as a three-tier distribution license: `free` / `free-limited` / `paid` (previously `free` / `restricted`, unenforced). The validator rejects unknown tiers; `tool-release.yml` publishes non-`free` tools as draft releases (assets uploaded, invisible to the public). `login-accessibility-cmd-launch` migrated from `restricted` to `free-limited`.
+- Added `scripts/new-tool.ps1`: scaffolds `tools/<tool-id>/` — schema-2.2 manifest, README skeleton with a Risk Notice template, and a stub entry script — so a new tool starts from a validating baseline with one command.
+- Added `build.kind: binary` for closed-source / externally provisioned binaries: optional `build.script` provisioning (download or copy into `dist/`), entry and artifacts asserted only after provisioning, binaries never enter git. Delivery channels documented in `docs/release-policy.md` (draft release + tier gating / private mirror repo / signed-URL storage).
+- Documented new-tool conventions in `docs/tool-manifest-schema.md`: ASCII kebab-case entry file names for new tools, the engine contract (governance scripts on pwsh 7, end-user scripts on Windows PowerShell 5.1), and the status of reserved kinds (`node`/`go`/`rust` are `build.script`-driven; `container`/`library` unimplemented).
 - Added `risk` to every manifest: `low` reads state or writes inside its own directory, `elevated` needs admin / writes `HKLM` / changes boot configuration / replaces system binaries. `licenseTier` no longer has to carry that meaning.
 - The validator now cross-checks the claim: a `low` tool that touches `HKLM`, `bcdedit`, `diskpart`, `utilman.exe`, `takeown`, `icacls` or `sc config` fails, and an `elevated` tool without a `## Risk Notice` in its README fails.
 - Added `hs2-missing-mods-downloader` as the eighth tool (Python source, PyInstaller build).
@@ -18,6 +23,9 @@ All notable changes to this repository will be documented in this file.
 - Added `windows-remove-org-restrictions` to the index; it existed on disk but was never documented.
 
 ### Changed
+- Publish-property ownership for `windows-disk-write-tracker`: `RuntimeIdentifier` and `SelfContained` now live in the project file (completing the migration the changelog announced earlier); the manifest `build.args` keeps only `-o dist`, which is the artifact-location contract the `artifacts` patterns reference. Output verified identical (48 files, same entry-shell size) with the full 114-assertion gate green.
+- Removed the hand-maintained tool index from the root README. The tool list is now generated only by `validate-tools.ps1` (console overview plus `out/tool-index.json`); no document keeps a manual tool list.
+- `windows-disk-write-tracker` `tools/verify.ps1` section 4 no longer runs `report` against the real `dist\data`: it copies the fixtures into a temp data directory first. Same assertions, but hermetic — a clean CI machine no longer fails for lacking user data.
 - Tool layout is now strictly flat: `tools/<tool-id>/tool.manifest.json`, exactly one level. The validator rejects nested manifests, requires `toolId` to equal the directory name, and requires kebab-case.
 - Renamed `hs2modpackanalyzer` to `hs2-modpack-analyzer` so ids read the same way across the repo.
 - Upgraded tool manifest schema to `2.1`: `runtime.entry` is a path contract rather than a "must already exist" requirement, and `build.script` / `build.outputDir` describe non-dotnet builds.
