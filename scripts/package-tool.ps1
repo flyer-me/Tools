@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$ToolId = '',
+    [string[]]$ToolId = @(),
     [string]$Version = '0.0.0-dev',
     [string]$OutDir = ''
 )
@@ -95,7 +95,7 @@ foreach ($manifestPath in $manifests) {
     $tool = Get-Content -Path $manifestPath.FullName -Raw | ConvertFrom-Json
 
     $id = [string]$tool.toolId
-    if ($ToolId -and $id -ne $ToolId) { continue }
+    if ($ToolId.Count -gt 0 -and $ToolId -notcontains $id) { continue }
 
     $buildKind = if ($tool.build.PSObject.Properties.Name -contains 'kind') { [string]$tool.build.kind } else { '' }
 
@@ -179,7 +179,7 @@ foreach ($manifestPath in $manifests) {
     }
 }
 
-if ($ToolId -and $packed -eq 0) { throw "No tool found with toolId '$ToolId'" }
+if ($ToolId.Count -gt 0 -and $packed -eq 0) { throw "No tool found with toolId(s) '$($ToolId -join ', ')'" }
 
 if ($sumLines.Count -gt 0) {
     [IO.File]::WriteAllLines($sumsPath, $sumLines, (New-Object System.Text.UTF8Encoding $false))

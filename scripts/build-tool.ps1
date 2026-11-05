@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$ToolId,
+    [string[]]$ToolId = @(),
     [string]$Configuration = "Release",
     [string]$Version
 )
@@ -151,12 +151,15 @@ function Invoke-ScriptBuild {
 }
 
 $toolDirs = @()
-if ($ToolId) {
-    $singleDir = Join-Path $toolsRoot $ToolId
-    if (-not (Test-Path -LiteralPath $singleDir -PathType Container)) {
-        throw "Unknown tool id '$ToolId' (no such directory under tools/)"
+if ($ToolId.Count -gt 0) {
+    # 增量构建：一次传入多个 toolId，顺序即执行顺序；空数组 = 全量。
+    foreach ($id in $ToolId) {
+        $singleDir = Join-Path $toolsRoot $id
+        if (-not (Test-Path -LiteralPath $singleDir -PathType Container)) {
+            throw "Unknown tool id '$id' (no such directory under tools/)"
+        }
+        $toolDirs += @(Get-Item -LiteralPath $singleDir)
     }
-    $toolDirs = @(Get-Item -LiteralPath $singleDir)
 }
 else {
     $toolDirs = @(Get-ChildItem -Path $toolsRoot -Directory | Sort-Object Name)

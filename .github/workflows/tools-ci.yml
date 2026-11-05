@@ -39,34 +39,106 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve changed tools
+        id: changed
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # 懒构建：只处理本次变更的工具。无法判定 diff 或治理层变更 -> 空 tools = 全量。
+          # 静态契约校验始终全量：8 个 JSON，毫秒级，且是工具索引的唯一来源。
+          $ErrorActionPreference = "Stop"
+          $diff = @()
+          $scoped = $false
+          if ($env:EVENT_NAME -eq "pull_request") {
+              $diff = @(git diff --name-only "origin/$env:BASE_REF...HEAD" 2>$null)
+              $scoped = ($LASTEXITCODE -eq 0)
+          }
+          elseif ($env:EVENT_NAME -eq "push" -and $env:BEFORE -and $env:BEFORE -notmatch '^0+$') {
+              $diff = @(git diff --name-only $env:BEFORE $env:GITHUB_SHA 2>$null)
+              $scoped = ($LASTEXITCODE -eq 0)
+          }
+
+          # 只有这些路径不影响产物；其它非 tools/ 变更（脚本、CI、根级配置）一律回退全量。
+          $docOnly = '^(README\.md|CHANGELOG\.md|CONTRIBUTING\.md|LICENSE|SECURITY\.md|CODEOWNERS|docs/|\.workbuddy/)'
+          $outside = @($diff | Where-Object { $_ -and $_ -notmatch '^tools/' -and $_ -notmatch $docOnly })
+          $ids = @($diff |
+              ForEach-Object { if ($_ -match '^tools/([^/]+)/') { $matches[1] } } |
+              Sort-Object -Unique |
+              Where-Object { Test-Path -LiteralPath (Join-Path (Join-Path "tools" $_) "tool.manifest.json") })
+
+          # 纯文档或仅删除工具的提交无需任何构建；无法判定 diff 时一律全量。
+          $skip = $scoped -and ($outside.Count -eq 0) -and ($ids.Count -eq 0)
+          $all = (-not $scoped) -or ($outside.Count -gt 0)
+          if ($all) { $ids = @() }
+
+          $needDotnet = $all
+          $needPython = $all
+          foreach ($id in $ids) {
+              $manifest = Get-Content -LiteralPath (Join-Path (Join-Path "tools" $id) "tool.manifest.json") -Raw | ConvertFrom-Json
+              if ($manifest.build.kind -eq "dotnet-msbuild") { $needDotnet = $true }
+              if ($manifest.build.kind -eq "python") { $needPython = $true }
+          }
+
+          "tools=$($ids -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "dotnet=$($needDotnet.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "python=$($needPython.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "skip=$($skip.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ($skip) { Write-Host "Changed tools: none (docs/removed tools only) - skipping build" }
+          elseif ($all) { Write-Host "Changed tools: ALL (full build)" }
+          else { Write-Host "Changed tools: $($ids -join ', ')" }
 
       - name: Setup .NET SDK
+        if: steps.changed.outputs.dotnet == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
 
       - name: Setup Python
+        if: steps.changed.outputs.python == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install PyInstaller
+        if: steps.changed.outputs.python == 'true'
         shell: pwsh
         run: python -m pip install --upgrade pyinstaller
 
       - name: Build tools
+        if: steps.changed.outputs.skip != 'true'
         shell: pwsh
-        run: .\scripts\build-tool.ps1
+        env:
+          TOOL_IDS: ${{ steps.changed.outputs.tools }}
+        run: |
+          $ids = @($env:TOOL_IDS -split ',' | Where-Object { $_ })
+          .\scripts\build-tool.ps1 -ToolId $ids
 
       - name: Assert declared artifacts exist
+        if: steps.changed.outputs.skip != 'true'
         shell: pwsh
-        run: .\scripts\assert-artifacts.ps1
+        env:
+          TOOL_IDS: ${{ steps.changed.outputs.tools }}
+        run: |
+          $ids = @($env:TOOL_IDS -split ',' | Where-Object { $_ })
+          .\scripts\assert-artifacts.ps1 -ToolId $ids
 
       - name: Package tools
+        if: steps.changed.outputs.skip != 'true'
         shell: pwsh
-        run: .\scripts\package-tool.ps1 -Version "0.0.0-ci.${{ github.run_number }}"
+        env:
+          TOOL_IDS: ${{ steps.changed.outputs.tools }}
+        run: |
+          $ids = @($env:TOOL_IDS -split ',' | Where-Object { $_ })
+          .\scripts\package-tool.ps1 -ToolId $ids -Version "0.0.0-ci.${{ github.run_number }}"
 
       - name: Upload tool packages
+        if: steps.changed.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tool-packages

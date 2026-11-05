@@ -35,3 +35,11 @@ pwsh -File .\scripts\assert-artifacts.ps1 -ToolId <tool-id>
 `validate` proves the manifest is legal; it cannot prove the build produces what the
 manifest promises. That is what `assert-artifacts` is for — a green build with an
 empty `dist/` is the failure mode this pair exists to catch.
+
+CI builds only the tools you touched. `validate` always checks every manifest;
+`tools-ci.yml` then derives the changed tool ids from the git diff and passes them to
+`build-tool.ps1` / `assert-artifacts.ps1` / `package-tool.ps1` (all three accept
+multiple `-ToolId` values; no argument means all tools). Changes to `scripts/`,
+workflows or root configuration trigger a full build, docs-only commits skip the
+build job, and `workflow_dispatch` always runs a full build. Releases are unaffected:
+a tag builds exactly one tool.
