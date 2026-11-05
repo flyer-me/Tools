@@ -129,6 +129,8 @@
 
 ### 任务 2.3 接入脚手架：`scripts/new-tool.ps1`（D4a，唯一新增脚本）
 
+> **状态：✅ 已完成（2026-11-05 15:10）**。约 80 行纯生成器（kebab-case 校验、manifest 2.2/manual/low 占位、README 骨架含 Risk Notice 模板、run.ps1 桩保证 manual entry 存在性立即通过）；UTF-8 BOM 已确认。往返验收：`new-tool.ps1 -ToolId sample-tool` → validate 9 工具全绿 → 删除 → 8 工具基线；非法命名 `Bad_ToolName` 被拒绝。agent-handoff 流程已改为脚手架优先的 5 步。
+
 **对"当前能否做到接入极简"的回答**：接近但未到。manual 类工具今天已只要四步（建目录、写 manifest、写 README、validate 绿），剩余摩擦是 manifest 样板与流程记忆。本任务把"从零到绿色基线"压缩为一条命令。
 
 **动作**：
