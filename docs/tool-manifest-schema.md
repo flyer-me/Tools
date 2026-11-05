@@ -35,6 +35,7 @@ Supported `build.kind` values:
 - `go`
 - `rust`
 - `manual`
+- `binary`
 
 For `dotnet-msbuild`, `build.project` is required.
 Optional fields:
@@ -61,6 +62,52 @@ Optional fields:
 
 `build.kind: manual` means there is no build step; the runtime entry must already
 exist in the repository.
+
+`build.kind: binary` is for closed-source or externally produced binaries:
+there is no build step either, but the artifacts are **not** expected to be in
+git — they are provisioned (see the recipe below). `build.script` is optional:
+when declared it is the provisioning script (download from private storage, or
+copy from a local path into `dist/`); when omitted, the binaries must be placed
+manually before packaging. Like every non-`manual` kind, `runtime.entry` and
+artifact existence are only asserted after the provision step by
+`assert-artifacts.ps1` — a clean clone validates green with an empty `dist/`.
+Credentials for a provisioning script belong to CI secrets or the local
+environment, never to the manifest or the repository.
+
+### Closed-source binary tool recipe
+
+1. `tools/<tool-id>/` with a `binary` manifest, an optional provisioning
+   `build.script`, and `artifacts` patterns pointing at `dist/`.
+2. Mark the tier: closed tools are typically `free-limited` or `paid`, which the
+   release workflow publishes as **draft** releases (see `docs/release-policy.md`).
+3. Delivery channels, in order of preference: draft releases with tier gating
+   (works today, zero new infrastructure); a private mirror repository with the
+   same governance scripts and manifest structure (assets downloadable only with
+   authorization); external object storage with signed URLs (repository keeps
+   only manifest and docs).
+4. Binaries never enter git — `**/dist/**` is already ignored.
+
+```json
+{
+  "manifestVersion": "2.2",
+  "toolId": "example-closed-tool",
+  "displayName": "Example Closed Tool",
+  "licenseTier": "paid",
+  "risk": "low",
+  "build": {
+    "kind": "binary",
+    "script": "provision.ps1",
+    "outputDir": "dist"
+  },
+  "runtime": {
+    "kind": "exe",
+    "entry": "dist/ExampleClosedTool.exe"
+  },
+  "artifacts": [
+    { "kind": "exe", "pattern": "dist/*.exe" }
+  ]
+}
+```
 
 ## Runtime model
 
@@ -130,6 +177,7 @@ it. They are separate on purpose — a free tool can still rewrite `bcdedit` set
 
 - `2.2`: added optional `build.verify` (uniform test control: tool-specific
   acceptance script, run by the shared build dispatcher after a successful build);
+  added `build.kind: binary` for closed-source / externally provisioned binaries;
   redefined `licenseTier` as `free` / `free-limited` / `paid` with release-channel
   enforcement (non-`free` tools publish as draft releases).
 - `2.1`: `runtime.entry` is a path contract, existence is asserted after the build;

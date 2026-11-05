@@ -6,7 +6,7 @@ $toolsRoot = Join-Path $repoRoot "tools"
 
 $supportedManifestVersion = "2.2"
 $supportedRuntimeKinds = @("script", "exe", "container", "library")
-$supportedBuildKinds = @("dotnet-msbuild", "powershell", "batch", "node", "python", "go", "rust", "manual")
+$supportedBuildKinds = @("dotnet-msbuild", "powershell", "batch", "node", "python", "go", "rust", "manual", "binary")
 $supportedScriptExtensions = @(".ps1", ".bat", ".cmd")
 # licenseTier 说的是授权，risk 说的是这台机器被改动的程度，两者不能互相顶替。
 $supportedRiskLevels = @("low", "elevated")
@@ -204,7 +204,9 @@ foreach ($toolDirInfo in $toolDirs) {
             }
         }
     }
-    elseif ($buildKind -notin @("dotnet-msbuild", "manual")) {
+    # binary（闭源二进制工具）与 manual 一样不强制 build.script：
+    # 声明了就是装配脚本（从私有存储/本地路径把产物放进 dist/），不声明就是纯手工供给。
+    elseif ($buildKind -notin @("dotnet-msbuild", "manual", "binary")) {
         $errors.Add("$($manifestPath): build.kind '$buildKind' requires build.script")
     }
 

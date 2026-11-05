@@ -142,6 +142,8 @@
 
 ### 任务 2.4 闭源二进制工具：组织与交付（D4b）
 
+> **状态：✅ 已完成（2026-11-05 15:22）**。schema 2.2 新增 `build.kind: binary`（可选 `build.script` 装配；validate 对 binary 不强制 script、不静态要求 entry 存在；build-tool 对无脚本的 binary 跳过构建）；schema 文档写入闭源 recipe 与示例 manifest；release-policy 写入三通道（draft 门禁 / 私有镜像仓 / 签名 URL）。**夹具验收**：构造 binary 工具（拷贝式装配 + 假 exe）——未装配 validate 绿 → build 装配 → assert 通过 → package 产出 zip + SHA256 → 清理后回到 8 工具基线。
+
 **原则**：本仓库是源仓库（README 自述 source of truth），闭源二进制**永不入 git**（`.gitignore` 的 `**/dist/**` 已天然拦截）。组织 = manifest 契约照常、产物由外部供给；交付 = release 资产或私有通道。
 
 **关键事实**：现有管道的 validate/assert 职责切分**已经支持**这种形态——工具只要不是 manual kind，entry 存在性就不在静态阶段要求，而在装配后由 assert-artifacts 强制。缺的只是一个显式 kind 与交付通道决策。

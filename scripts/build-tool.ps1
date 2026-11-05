@@ -178,8 +178,10 @@ foreach ($toolDirInfo in $toolDirs) {
 
     $hasBuildScript = ($tool.build.PSObject.Properties.Name -contains "script") -and -not [string]::IsNullOrWhiteSpace([string]$tool.build.script)
 
-    if ($kind -eq "manual") {
-        Write-Host "  skip: build.kind is 'manual'"
+    if ($kind -eq "manual" -or ($kind -eq "binary" -and -not $hasBuildScript)) {
+        # manual 没有构建；binary 未声明装配脚本时产物由外部供给，同样没有构建步骤。
+        # binary 声明了 build.script 则走脚本装配（下载/复制进 dist/）。
+        Write-Host "  skip: no build step"
     }
     else {
         if ($kind -eq "dotnet-msbuild") {

@@ -38,6 +38,21 @@ The tier is metadata everywhere else in the pipeline; this repository does not
 build in-tool license checks. If per-tool subscription enforcement is ever added,
 the field is already per-tool and ready to drive it.
 
+## Closed-source binary tools
+
+Closed-source binaries never enter git. They use `build.kind: binary` with an
+optional provisioning `build.script` and are packaged like any other tool (see
+`docs/tool-manifest-schema.md` for the recipe). Delivery channels, in order of
+preference:
+
+1. **Draft release + tier gating** — works today: a `free-limited` / `paid` tool
+   gets a draft release with all assets; converting or moving it is a deliberate
+   maintainer action.
+2. **Private mirror repository** — the same governance scripts and manifest
+   structure in a private repo; Release assets download only with authorization.
+3. **External object storage with signed URLs** — the repository keeps only the
+   manifest and docs.
+
 ## Republishing
 
 The workflow refuses to touch an existing release. It does not use `--clobber`, so a
