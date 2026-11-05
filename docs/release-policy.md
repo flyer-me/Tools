@@ -22,6 +22,22 @@ Pipelines should resolve `<tool-id>` from the tag and only package the matching 
 3. Release assets are always `<tool-id>-<version>[-win-x64].zip` plus `SHA256SUMS.txt`.
    `-win-x64` is appended for `build.kind = dotnet-msbuild`.
 
+## License tiers and release visibility
+
+`licenseTier` in `tool.manifest.json` declares a tool's distribution license tier:
+`free` (unlimited free use), `free-limited` (free with limits), or `paid`. The
+validator rejects unknown tiers. Enforcement lives in exactly one place today —
+the release channel:
+
+- `free` tools publish a normal public GitHub Release.
+- `free-limited` / `paid` tools are built, packaged and uploaded like any other,
+  but the release is created with `--draft`: assets exist, the release is
+  invisible to the public until a maintainer deliberately converts or moves it.
+
+The tier is metadata everywhere else in the pipeline; this repository does not
+build in-tool license checks. If per-tool subscription enforcement is ever added,
+the field is already per-tool and ready to drive it.
+
 ## Republishing
 
 The workflow refuses to touch an existing release. It does not use `--clobber`, so a

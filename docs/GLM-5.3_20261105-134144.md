@@ -111,6 +111,8 @@
 
 ### 任务 2.2 `licenseTier` 落地为分发授权层级（D3）
 
+> **状态：✅ 已完成（2026-11-05 15:02）**。枚举重定义 `free` / `free-limited` / `paid`；validate 增加枚举校验（负向测试：`restricted` 正确红，正向恢复绿）；`login-accessibility-cmd-launch` 迁移 `restricted` → `free-limited`；`tool-release.yml` resolve 步骤输出 `license-tier`、Publish 步骤对非 free 工具加 `--draft`；release-policy.md 新增 "License tiers and release visibility" 一节。远期路线（私有通道、工具内许可校验）只记录未实现。
+
 **判断（此字段是否必要）**：**保留，但必须立即获得真实消费者，否则是装饰性字段**。在当前"GitHub 公开 Release"的分发模型里，不引入支付系统就能真实执行的层级语义只有一个——**发布通道门禁**：免费工具走公开 release，受限/付费工具不进公开渠道。工具内订阅校验（license key、在线授权）超出本仓库职责，属远期路线。
 
 **动作**：

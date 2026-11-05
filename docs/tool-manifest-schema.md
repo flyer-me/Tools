@@ -15,7 +15,9 @@ validator and the release tag format would then disagree with.
 - `manifestVersion`: string, must be `2.1`
 - `toolId`: string, kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`), must equal the tool directory name
 - `displayName`: human-readable name
-- `licenseTier`: `free` / `restricted` / future approved tiers
+- `licenseTier`: `free` / `free-limited` / `paid` — the distribution license tier.
+  Enforced at exactly one place: the release channel (non-`free` tools release as
+  drafts — see `docs/release-policy.md`).
 - `risk`: `low` / `elevated` — how much the tool changes the machine (see below)
 - `build`: object with `kind`
 - `runtime`: object with `kind` and `entry`
@@ -127,7 +129,9 @@ it. They are separate on purpose — a free tool can still rewrite `bcdedit` set
 ## Version history
 
 - `2.2`: added optional `build.verify` (uniform test control: tool-specific
-  acceptance script, run by the shared build dispatcher after a successful build).
+  acceptance script, run by the shared build dispatcher after a successful build);
+  redefined `licenseTier` as `free` / `free-limited` / `paid` with release-channel
+  enforcement (non-`free` tools publish as draft releases).
 - `2.1`: `runtime.entry` is a path contract, existence is asserted after the build;
   added `build.script`, `build.outputDir` and `risk`; `toolId` must equal the
   directory name and be kebab-case; a tool must sit exactly at `tools/<tool-id>/`.

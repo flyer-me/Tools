@@ -2,7 +2,7 @@
   "manifestVersion": "2.2",
   "toolId": "login-accessibility-cmd-launch",
   "displayName": "Login Accessibility CMD Launch",
-  "licenseTier": "restricted",
+  "licenseTier": "free-limited",
   "risk": "elevated",
   "build": {
     "kind": "manual"

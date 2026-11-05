@@ -10,6 +10,9 @@ $supportedBuildKinds = @("dotnet-msbuild", "powershell", "batch", "node", "pytho
 $supportedScriptExtensions = @(".ps1", ".bat", ".cmd")
 # licenseTier 说的是授权，risk 说的是这台机器被改动的程度，两者不能互相顶替。
 $supportedRiskLevels = @("low", "elevated")
+# licenseTier 是分发授权层级：free（免费无限）/ free-limited（免费有限）/ paid（付费）。
+# enforcement 只在 release 工作流：非 free 只发 draft；本仓库不做工具内许可校验。
+$supportedLicenseTiers = @("free", "free-limited", "paid")
 
 # "这台机器被改了"的强信号，不是完整的危险命令库。
 # 刻意不收 format / Remove-Item 这类词：它们在没有上下文时误报太多，
@@ -107,6 +110,9 @@ foreach ($toolDirInfo in $toolDirs) {
     }
     if ([string]::IsNullOrWhiteSpace([string]$tool.licenseTier)) {
         $errors.Add("$($manifestPath): licenseTier cannot be empty")
+    }
+    elseif ($tool.licenseTier -notin $supportedLicenseTiers) {
+        $errors.Add("$($manifestPath): unsupported licenseTier '$($tool.licenseTier)' (expected: $($supportedLicenseTiers -join ', '))")
     }
 
     $riskLevel = if ($tool.PSObject.Properties.Name -contains "risk") { [string]$tool.risk } else { "" }
