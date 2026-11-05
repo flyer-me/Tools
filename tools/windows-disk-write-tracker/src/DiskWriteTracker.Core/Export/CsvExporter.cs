@@ -6,7 +6,7 @@ namespace DiskWriteTracker.Core.Export;
 /// <summary>CSV 导出：UTF-8 BOM + CRLF + RFC4180 转义，Excel 直接打开不乱码。</summary>
 public static class CsvExporter
 {
-    public static string ToCsv(IEnumerable<string[]> rows)
+    private static string ToCsv(IEnumerable<string[]> rows)
     {
         var sb = new StringBuilder();
         foreach (var row in rows)
@@ -44,10 +44,11 @@ public static class CsvExporter
     }
 
     /// <summary>字节数转人类可读，保留 3 位小数（不千分位，避免 Excel 类型推断）。</summary>
-    public static string FormatBytes(long? bytes)
+    /// <param name="nullText">值为空时的呈现。CSV 必须空串（否则 Excel 把它当数据），报表要 "—"。</param>
+    public static string FormatBytes(long? bytes, string nullText = "")
     {
         if (!bytes.HasValue)
-            return string.Empty;
+            return nullText;
 
         double value = bytes.Value;
         string[] units = ["B", "KB", "MB", "GB", "TB", "PB"];

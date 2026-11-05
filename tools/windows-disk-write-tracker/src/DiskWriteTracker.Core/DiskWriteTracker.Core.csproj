@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- M1 刻意保持零 PackageReference：仅用 BCL + Win32 P/Invoke。
-       引入任何 NuGet 前请先更新 plan 的依赖矩阵。 -->
+  <!-- 保持零 PackageReference：仅用 BCL + Win32 P/Invoke。 -->
 
   <PropertyGroup>
     <RootNamespace>DiskWriteTracker.Core</RootNamespace>

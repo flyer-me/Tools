@@ -1,7 +1,8 @@
 namespace DiskWriteTracker.Core.Config;
 
 /// <summary>
-/// 引擎运行参数。只有下面这些字段真正接线，其余在 default.json 里标 reserved，避免"配了不生效"。
+/// 引擎运行参数。每个字段都有真实消费者，default.json 与这里的字段严格一一对应。
+/// 不预留"先占位、以后实现"的键：那种键只会让用户以为自己能改，改了却没有任何效果。
 /// </summary>
 public sealed record AppConfig
 {
@@ -25,6 +26,12 @@ public sealed record AppConfig
 
     /// <summary>INFO 或 ERROR。ERROR 时不写采样成功行。</summary>
     public string LogLevel { get; init; } = "INFO";
+
+    /// <summary>日志按文件名日期保留的天数，与样本的 RetentionDays 互相独立。</summary>
+    public int LogRetentionDays { get; init; } = 30;
+
+    /// <summary>单个日志文件的体积上限，达到即滚动。默认 1 MiB。</summary>
+    public long LogMaxFileBytes { get; init; } = 1024 * 1024;
 
     /// <summary>加载过程中的非致命问题，界面与 doctor 必须展示，不得静默。</summary>
     public string? LoadWarning { get; init; }

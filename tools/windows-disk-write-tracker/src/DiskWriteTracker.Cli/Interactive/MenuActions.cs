@@ -9,7 +9,6 @@ namespace DiskWriteTracker.Cli.Interactive;
 
 /// <summary>
 /// 菜单的 8 个动作。采样与报表都在本进程内直接调 Core —— 写入口仍是 JsonlSampleStore + 跨进程文件锁，
-/// 计划任务与手动采样并发时依旧被串行化。
 /// </summary>
 internal static class MenuActions
 {
@@ -74,7 +73,7 @@ internal static class MenuActions
         var samples = LoadSamples(session, session.Settings.ReportDays);
         if (samples.Count == 0)
         {
-            ConsoleUi.Warn("  还没有采样数据。先选 1 采样一次。");
+            ConsoleUi.Warn($"  最近 {session.Settings.ReportDays} 天没有采样数据。先选 1 采样一次。");
             return 4;
         }
 
@@ -102,7 +101,7 @@ internal static class MenuActions
         var samples = LoadSamples(session, session.Settings.ExportDays);
         if (samples.Count == 0)
         {
-            ConsoleUi.Warn("  还没有采样数据。先选 1 采样一次。");
+            ConsoleUi.Warn($"  最近 {session.Settings.ExportDays} 天没有采样数据。先选 1 采样一次。");
             return 4;
         }
 
@@ -192,25 +191,52 @@ internal static class MenuActions
 
     public static int UninstallTask(MenuSession session)
     {
-        string? answer = ConsoleUi.Prompt("  是否同时删除全部样本数据？输入 DELETE 确认，直接回车只删任务");
+        ConsoleUi.Info("  移除每日任务。数据怎么处理？");
+        ConsoleUi.Faint("    直接回车       只移除任务，样本、日志、偏好全部保留");
+        ConsoleUi.Faint("    输入 DELETE     移除任务并删除样本与日志，保留偏好设置");
+        ConsoleUi.Faint("    输入 DELETE ALL 连同偏好设置一起删除");
+
+        string? answer = ConsoleUi.Prompt("  请输入");
         if (answer is null)
             return 0;
 
-        bool purge = string.Equals(answer.Trim(), "DELETE", StringComparison.Ordinal);
+        // 三档而不是两档：偏好设置（窗口天数、采样时间）删掉就得重配一遍，
+        // 而样本删掉只要重新采样。把两者绑在同一个"确认删除"里，用户没有选择权。
+        string mode = answer.Trim().ToUpperInvariant() switch
+        {
+            "DELETE" => "data",
+            "DELETE ALL" => "all",
+            _ => "none"
+        };
+
+        string arguments = mode switch
+        {
+            "all" => "schedule uninstall --purge-all",
+            "data" => "schedule uninstall --purge-data",
+            _ => "schedule uninstall"
+        };
 
         var watch = Stopwatch.StartNew();
         bool ok;
         string? error = null;
         string exe = Program.ResolveSelfPath();
-        string arguments = purge ? "schedule uninstall --purge-data" : "schedule uninstall";
 
         if (session.IsElevated)
         {
-            var result = ScheduleManager.Invoke(
+            // 开关参数只在打开时传：`-PurgeData:$false` 在 -File 调用下会绑定失败
+            var args = new List<string>
+            {
                 "-Action", "uninstall",
-                "-TaskName", ScheduleManager.DefaultTaskName,
-                "-PurgeData:" + (purge ? "$true" : "$false"),
-                "-DataDirectory", session.DataDirectory);
+                "-TaskName", ScheduleManager.DefaultTaskName
+            };
+
+            if (mode == "all") args.Add("-PurgeAll");
+            else if (mode == "data") args.Add("-PurgeData");
+
+            args.Add("-DataDirectory");
+            args.Add(session.DataDirectory);
+
+            var result = ScheduleManager.Invoke([.. args]);
 
             ok = result.Ok;
             error = result.Error ?? result.RawJson;
@@ -227,6 +253,7 @@ internal static class MenuActions
 
         watch.Stop();
         session.RefreshTaskStatus();
+        session.RefreshSampleStats();
 
         EngineLog.Action(session.DataDirectory, "menu/5 " + arguments, ok ? 0 : 7, watch.Elapsed.TotalMilliseconds, null, error);
 
@@ -238,7 +265,12 @@ internal static class MenuActions
             return 7;
         }
 
-        ConsoleUi.Ok(purge ? "  任务已移除，样本数据已删除。" : "  任务已移除，样本数据保留。");
+        ConsoleUi.Ok(mode switch
+        {
+            "all" => "  任务已移除，样本与偏好设置都已删除。",
+            "data" => "  任务已移除，样本已删除，偏好设置保留。",
+            _ => "  任务已移除，数据全部保留。"
+        });
         ConsoleUi.Faint("  开始菜单里的快捷方式不再需要时可以手动删除。");
         return 0;
     }
@@ -318,12 +350,16 @@ internal static class MenuActions
         return 0;
     }
 
+    /// <summary>
+    /// 只读窗口内的样本文件。窗口读取会顺带带回起点之前的前驱，
+    /// 报表与导出都按窗口再筛一次日期，所以这里不需要额外过滤。
+    /// </summary>
     private static IReadOnlyList<SampleRecord> LoadSamples(MenuSession session, int days)
     {
         try
         {
-            return new JsonlSampleStore(session.DataDirectory)
-                .ReadForWindow(days, DateOnly.FromDateTime(DateTime.Now));
+            var store = new JsonlSampleStore(session.DataDirectory);
+            return store.ReadForWindow(days, DateOnly.FromDateTime(DateTime.Now));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

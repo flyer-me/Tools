@@ -3,47 +3,56 @@ using System.Globalization;
 namespace DiskWriteTracker.Core.Store;
 
 /// <summary>
-/// 一个按日切分的样本文件。文件名里就是日期，读取时据此跳过老文件，
-/// 不必先打开再解析——这是窗口读取能便宜的唯一原因。
+/// samples-yyyyMMdd.jsonl 文件名的唯一解析入口。
 ///
-/// 文件名解析原先散在采样剪枝、菜单计数两处各写一遍，格式一改就会两处不同步，
-/// 因此收到这里做唯一实现。
+/// 之所以要单独收一个类型：这个解析原先在 SamplingRunner（剪枝）、MenuSession（数样本）、
+/// ReportWriter（判断报表是否过期）里各写了一遍，三处对"长度必须是 16"的写法还不完全一致。
+/// 文件名格式一旦变，漏改一处就是"某条路径静默读不到样本"，而这种静默缺失最难查。
 /// </summary>
 public readonly record struct SampleFile(string Path, DateOnly Date)
 {
     public const string Prefix = "samples-";
     public const string Suffix = ".jsonl";
 
+    /// <summary>文件名（含扩展名），日志与提示里用。</summary>
+    public string Name => System.IO.Path.GetFileName(Path);
+
     public static bool TryParse(string path, out SampleFile file)
     {
         file = default;
 
         string name = System.IO.Path.GetFileNameWithoutExtension(path);
-        if (name.Length != Prefix.Length + 8 || !name.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
+        if (name.Length != Prefix.Length + 8 || !name.StartsWith(Prefix, StringComparison.Ordinal))
             return false;
 
-        if (!DateOnly.TryParseExact(name.AsSpan(Prefix.Length), "yyyyMMdd", CultureInfo.InvariantCulture,
-                DateTimeStyles.None, out DateOnly date))
+        if (!DateOnly.TryParseExact(
+                name.AsSpan(Prefix.Length),
+                "yyyyMMdd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out DateOnly date))
+        {
             return false;
+        }
 
         file = new SampleFile(path, date);
         return true;
     }
 
-    /// <summary>按文件名日期升序枚举样本文件；解析不出日期的文件直接忽略。</summary>
+    /// <summary>枚举目录下的样本文件，按日期升序。名字不合规的一律忽略，绝不猜测。</summary>
     public static List<SampleFile> Enumerate(string directory)
     {
-        var files = new List<SampleFile>();
-        if (!System.IO.Directory.Exists(directory))
-            return files;
+        var result = new List<SampleFile>();
+        if (!Directory.Exists(directory))
+            return result;
 
-        foreach (string path in System.IO.Directory.EnumerateFiles(directory, Prefix + "*" + Suffix))
+        foreach (string path in Directory.EnumerateFiles(directory, Prefix + "*" + Suffix))
         {
             if (TryParse(path, out SampleFile file))
-                files.Add(file);
+                result.Add(file);
         }
 
-        files.Sort(static (a, b) => a.Date.CompareTo(b.Date));
-        return files;
+        result.Sort((a, b) => a.Date.CompareTo(b.Date));
+        return result;
     }
 }

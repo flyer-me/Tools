@@ -22,8 +22,6 @@ internal static class ShellLauncher
         }
     }
 
-    public static bool OpenUrl(string url) => Open(url);
-
     public static bool RevealDirectory(string path)
     {
         if (!Directory.Exists(path))

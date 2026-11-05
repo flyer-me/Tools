@@ -58,6 +58,8 @@ public static class AppConfigLoader
                 DailyTime = NormalizeTime(ReadString(root, "sampling", "dailyTime")) ?? defaults.DailyTime,
                 RequireWearGate = ReadBool(root, "units", "requireWearGate") ?? defaults.RequireWearGate,
                 LogLevel = (ReadString(root, "logging", "level") ?? defaults.LogLevel).ToUpperInvariant(),
+                LogRetentionDays = Clamp(ReadInt(root, "logging", "retentionDays") ?? defaults.LogRetentionDays, 1, 3650),
+                LogMaxFileBytes = Clamp(ReadInt(root, "logging", "maxFileBytes") ?? (int)defaults.LogMaxFileBytes, 64 * 1024, 64 * 1024 * 1024),
                 SourcePath = sourcePath
             };
         }

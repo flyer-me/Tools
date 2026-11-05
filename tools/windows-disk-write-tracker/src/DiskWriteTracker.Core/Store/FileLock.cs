@@ -33,7 +33,7 @@ internal static class FileLock
                 var stream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.None);
 
                 // 首次创建出来的文件不继承隐藏属性，这里补一次。
-                // 自己正以 FileShare.None 持有句柄，SetAttributes 可能被拒，失败也无妨——下次 Acquire 会补上。
+                // 自己正以 FileShare.None 持有句柄，SetAttributes 可能被拒；下次 Acquire 会补上。
                 EnsureHidden(lockPath);
                 return stream;
             }
@@ -61,7 +61,7 @@ internal static class FileLock
 
     /// <summary>
     /// 把锁文件标成隐藏，让数据目录在资源管理器里只露出样本、日志、导出这三类用户能理解的东西。
-    /// 纯外观处理，任何失败都忽略：拿不到属性不影响加锁本身。
+    /// 设置隐藏属性；失败时跳过，锁由文件句柄本身保证。
     /// </summary>
     internal static void EnsureHidden(string path)
     {
@@ -76,7 +76,6 @@ internal static class FileLock
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // 被别的进程独占持有、或文件系统不支持，都不该影响采样
         }
     }
 }

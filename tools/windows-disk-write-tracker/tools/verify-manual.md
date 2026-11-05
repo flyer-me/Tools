@@ -1,6 +1,6 @@
-﻿# 人工验收清单
+# 人工验收清单
 
-`scripts\verify.ps1` 覆盖的是**能自动化**的部分：产物形态、命令行契约、日增量算法、
+`tools\verify.ps1` 覆盖的是**能自动化**的部分：产物形态、命令行契约、日增量算法、
 报表自包含、CSV 编码、并发写锁、计划任务 dry-run。
 
 下面这些必须在真终端里用人眼确认，因为它们的判定依据是「窗口弹出来了没有」「浏览器里点了有没有反应」，
@@ -8,8 +8,8 @@
 
 ## 前置条件
 
-1. 已跑过 `scripts\build.ps1`，`src\dist\` 里有 `DiskWriteTracker.exe` / `README.txt` / `data`。
-2. 在**资源管理器里双击** `src\dist\DiskWriteTracker.exe`（不要在已重定向输出的终端里跑，
+1. 已跑过 `tools\build.ps1`，`dist\` 里有 `DiskWriteTracker.exe` / `README.txt` / `data`。
+2. 在**资源管理器里双击** `dist\DiskWriteTracker.exe`（不要在已重定向输出的终端里跑，
    那样会按设计退回打印帮助文本）。
 3. 全程用**普通权限**账户，只有第 5 项需要管理员授权。
 
@@ -114,12 +114,16 @@
 
 **步骤**：输入 `5` 回车。
 
-**预期**：
-- 先问是否连数据一起删，默认「否」。
-- 只删任务时：打印「已移除任务」，样本文件仍在。
-- 选择连数据一起删时：要求输入 `DELETE` 才继续；输入其他内容则取消。
+**预期**（三档）：
+- 直接回车：只移除任务，打印「数据全部保留」，样本与 `config\settings.json` 都在。
+- 输入 `DELETE`：移除任务并删除样本与日志，`data\config\settings.json` **仍在**。
+- 输入 `DELETE ALL`：连 `data\config\` 一起删。
+- 输入别的内容：等同第一档。
 
-**失败判据**：没问就删了数据；或输错确认词仍然删了。
+**失败判据**：`DELETE` 把 `config\` 删了；或没输确认词就删了数据。
+
+**先预演**：终端执行 `DiskWriteTracker.exe schedule uninstall --purge-data --dry-run`，
+应逐个列出「将删除」「将保留」的文件，且执行后文件一个都没少。
 
 ---
 
@@ -127,10 +131,10 @@
 
 **步骤**：输入 `6` 回车。
 
-**预期**：资源管理器打开 `src\dist\data`，里面能看到 `samples-*.jsonl`、`exports\`、`logs\`、
-`settings.json`，**看不到** `.write.lock`（隐藏属性生效）。
+**预期**：资源管理器打开 `dist\data`，能看到 `samples-*.jsonl`、`exports\`、`logs\`、
+`config\`（其下才是 `settings.json`），**看不到** `.write.lock`（隐藏属性生效）。
 
-**失败判据**：目录没打开；或 `.write.lock` 明晃晃列在那里。
+**失败判据**：目录没打开；或 `settings.json` 仍躺在 `data` 根；或 `.write.lock` 明晃晃列在那里。
 
 ---
 
@@ -144,19 +148,45 @@
 
 ---
 
-## 10. 设置持久化
+## 10. 偏好设置的位置与回落
 
-**步骤**：菜单里把报表窗口改成 30 天，退出程序，重新双击。
+**步骤**：
+1. 用记事本打开 `dist\data\config\settings.json`，把 `reportDays` 改成 `30`，保存。
+2. 重新双击 exe。
 
-**预期**：顶部「报表窗口 : 近 30 天」保持不变；`data\settings.json` 里 `reportDays` 为 30。
+**预期**：顶部显示「报表窗口 : 近 30 天」；文件里 `schemaVersion` 为 `2`，且**没有** `logDays`。
 
-**失败判据**：重开后回落到 400。
+**失败判据**：重开后回落到 400；或文件里还留着 `logDays`。
+
+---
+
+## 10b. 旧版偏好自动迁移
+
+**步骤**：把 `data\config\settings.json` 手动挪回 `data\settings.json`（模拟 schemaVersion 1 布局），重新双击 exe。
+
+**预期**：`data\settings.json` 消失，`data\config\settings.json` 重新出现，`reportDays` 保持原值。
+
+**失败判据**：旧文件还在、新文件没生成，或偏好被重置成 400。
+
+---
+
+## 10c. 日志自动回收
+
+**步骤**：
+1. 在 `dist\data\logs` 里手工新建 `engine-20200101.log`，随手写点内容。
+2. 终端执行 `DiskWriteTracker.exe sample`。
+
+**预期**：
+- `engine-20200101.log` 被删除（超过 30 天）。
+- 当天日志仍在；若它超过 1 MiB，会被改名为 `engine-yyyyMMdd.1.log`，新内容写进新的同名文件。
+
+**失败判据**：90 天前的日志还在；或超限日志一直变大不分片。
 
 ---
 
 ## 11. 整个文件夹搬走
 
-**步骤**：把 `src\dist` 整个文件夹复制到 U 盘或另一个路径，双击里面的 exe。
+**步骤**：把 `dist` 整个文件夹复制到 U 盘或另一个路径，双击里面的 exe。
 
 **预期**：
 - 数据目录指向新位置下的 `data`，标记仍为 `[便携]`。

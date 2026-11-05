@@ -17,8 +17,6 @@ internal static class StorageQuery
     internal const uint StorageAdapterProtocolSpecificProperty = 49;
     internal const uint StorageDeviceProtocolSpecificProperty = 50;
 
-    internal const uint ProtocolTypeScsi = 1;
-    internal const uint ProtocolTypeAta = 2;
     internal const uint ProtocolTypeNvme = 3;
 
     internal const uint NvmeDataTypeIdentify = 1;

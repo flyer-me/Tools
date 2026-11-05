@@ -3,7 +3,7 @@ using Microsoft.Win32.SafeHandles;
 
 namespace DiskWriteTracker.Core.Interop;
 
-/// <summary>打开物理驱动器时实际取得的权限级别。</summary>
+/// <summary>打开物理驱动器时实际取得的权限级别。disks 命令会展示它。</summary>
 internal enum DeviceAccess
 {
     None = 0,
@@ -24,10 +24,6 @@ internal static class NativeMethods
 
     internal const int ERROR_FILE_NOT_FOUND = 2;
     internal const int ERROR_ACCESS_DENIED = 5;
-    internal const int ERROR_INVALID_FUNCTION = 1;
-    internal const int ERROR_INVALID_PARAMETER = 87;
-    internal const int ERROR_NOT_SUPPORTED = 50;
-    internal const int ERROR_INSUFFICIENT_BUFFER = 122;
 
     [DllImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern SafeFileHandle CreateFileNative(

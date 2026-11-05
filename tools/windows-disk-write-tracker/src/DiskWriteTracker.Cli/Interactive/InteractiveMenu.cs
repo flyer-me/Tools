@@ -4,7 +4,6 @@ namespace DiskWriteTracker.Cli.Interactive;
 
 /// <summary>
 /// 双击 exe 时的交互菜单。只在真终端里启动：输入或输出任一被重定向时退回打印帮助，
-/// 保证脚本、管道、计划任务调用 exe 时不会挂在那里等键盘。
 /// </summary>
 internal static class InteractiveMenu
 {

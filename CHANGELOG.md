@@ -33,11 +33,16 @@ All notable changes to this repository will be documented in this file.
 - Extended `scripts/validate-tools.ps1` to enforce the schema strictly.
 - Updated CI workflow to mainstream split pipeline (`validate` -> `build`) with least privilege.
 - Disabled `setup-dotnet` package caching: it requires `packages.lock.json`, and this repo restores without a lock file, so the step failed before anything was built. Caching comes back when lock files do.
+- `windows-disk-write-tracker` now targets `net10.0-windows`; CI installs the .NET 10 SDK.
+- `windows-disk-write-tracker` ships as a self-contained multi-file layout (~21 MB, was a 35 MB single file): the manifest declares the runtime DLLs and config files so the packaged zip stays runnable.
+- `windows-disk-write-tracker` data layout: preferences moved to `data/config/settings.json`, logs are pruned by age and rolled at 1 MB, and a windowed read opens only the files inside the window plus one predecessor per drive.
 - Added risky-command warnings for privileged batch operations.
 
 ### Removed
 - Removed committed binaries from the repository: `windows-disk-write-tracker/src/dist/DiskWriteTracker.exe` (36 MB) and `hs2-missing-mods-downloader/dist/download_missing_mods.exe` (9.4 MB) are build output now.
 - Removed the `tools/ModpackManager/` grouping layer; its design notes moved to `docs/backlog/modpackmanager/`.
+- Removed `history`, `export --all`, and the `daily.json` rebuild path from `windows-disk-write-tracker`: the real usage log showed none of them were ever invoked.
+- Removed `windows-disk-write-tracker/docs/spike-sqlite.md`, a measurement report for a database option that was not adopted.
 - Removed local build residue that had leaked into the tree (`bin/`, `obj/`, `.vs/`, `.csproj.user`) and a hardcoded HS2 install path in the deploy script.
 
 ## [0.1.0] - 2026-03-29

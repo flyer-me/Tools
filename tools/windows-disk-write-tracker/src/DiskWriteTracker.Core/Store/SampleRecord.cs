@@ -4,7 +4,7 @@ using System.Text;
 namespace DiskWriteTracker.Core.Store;
 
 /// <summary>
-/// 一条落盘样本。字段设计与 plan 中 samples 表一一对应，便于 M2 迁移到 SQLite。
+/// 一条落盘样本的数据契约。
 /// </summary>
 public sealed record SampleRecord
 {

@@ -108,9 +108,6 @@ internal readonly record struct NvmeHealthLog(
     ulong MediaErrors,
     uint PropertyIdUsed)
 {
-    internal long TotalBytesWritten => checked((long)Math.Min(DataUnitsWritten * (ulong)Nvme.BytesPerDataUnit, long.MaxValue));
-
-    internal double TemperatureCelsius => TemperatureKelvin >= 273 ? TemperatureKelvin - 273.15 : TemperatureKelvin;
 }
 
 internal readonly record struct NvmeIdentify(string SerialNumber, string ModelNumber, string FirmwareRevision);

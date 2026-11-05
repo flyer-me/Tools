@@ -1,20 +1,25 @@
-﻿<Project>
+<Project>
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Deterministic>true</Deterministic>
+    <!-- 版本号里不嵌 git commit：两仓 HEAD 不同会让同一份源码产出不同字节的程序集 -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!-- 让 .editorconfig 里的 IDE 规则（未使用成员等）真正参与构建，否则它们只是 IDE 里的灰字 -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- 发布产物不带符号文件。放这里而不是入口项目里：DebugType 只对设置了它的那个
+         项目生效，被引用的 Core 仍会产出 .pdb 并被 publish 一起拷进 dist。 -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
-    <!-- 真实版本由 release tag 通过 -p:Version= 注入；本地构建用占位值。
-         IncludeSourceRevisionInInformationalVersion 关掉，避免 tag 版本被 +<sha> 污染。 -->
-    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
-    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Version>0.1.0</Version>
     <Authors>DiskWriteTracker</Authors>
     <Product>DiskWriteTracker</Product>
   </PropertyGroup>

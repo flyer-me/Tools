@@ -12,7 +12,7 @@ internal sealed record ReportOutcome(
     int ExitCode);
 
 /// <summary>
-/// 报表生成。命令行 <c>report</c> 与菜单选项 1/2 都走这里，保证两处产出的文件、路径、归档规则完全一致。
+/// 报表生成。命令行 <c>report</c> 与菜单选项 1/2 共用此入口，统一文件名、路径与归档规则。
 /// </summary>
 internal static class ReportWriter
 {
@@ -126,11 +126,10 @@ internal static class ReportWriter
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // 归档失败不影响主报表，已经生成的那份才是用户要看的
         }
     }
 
-    /// <summary>归档是技术细节，藏着别让用户点开。失败无所谓。</summary>
+    /// <summary>归档副本写入。</summary>
     private static void HideDirectory(string path)
     {
         try

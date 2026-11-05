@@ -1,4 +1,5 @@
 using System.Text;
+using DiskWriteTracker.Core.Config;
 using DiskWriteTracker.Core.Store;
 
 namespace DiskWriteTracker.Core.Logging;
@@ -50,11 +51,17 @@ public static class EngineLog
                 DateTime.Now, level, message, Environment.NewLine);
 
             using var logLock = FileLock.Acquire(Path.Combine(dir, ".log.lock"), TimeSpan.FromSeconds(2));
+
+            // 写前滚动。体积闸门只在这里能生效：文件是按日切的，跨日不会触发，
+            // 只有"同一天写了很多行"才会碰到上限。
+            // 每次都读一遍配置而不是缓存：一次采样只写一行，读配置是毫秒级，
+            // 换取的是运维改 default.json 后下一次采样立刻生效，不用重启任何东西。
+            LogRetention.RollIfOversize(path, AppConfigLoader.Load().LogMaxFileBytes);
+
             File.AppendAllText(path, line, new UTF8Encoding(false));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TimeoutException)
         {
-            // 日志写不进去也绝不打断采样
         }
     }
 
@@ -99,11 +106,13 @@ public static class EngineLog
                 sb.Append("[stderr] ").Append(standardError.TrimEnd()).Append(Environment.NewLine);
 
             using var logLock = FileLock.Acquire(Path.Combine(dir, ".log.lock"), TimeSpan.FromSeconds(2));
+
+            LogRetention.RollIfOversize(path, AppConfigLoader.Load().LogMaxFileBytes);
+
             File.AppendAllText(path, sb.ToString(), new UTF8Encoding(false));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TimeoutException)
         {
-            // 记不上就算了，不能因为日志失败让用户的操作白做
         }
     }
 }

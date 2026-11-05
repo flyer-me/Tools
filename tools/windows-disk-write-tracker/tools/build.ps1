@@ -81,7 +81,6 @@ function Convert-LegacySettings {
     }
 
     $days = 400
-    $logDays = 30
 
     $reportDays = $days
     if ($null -ne $raw.reportDays -and [int]$raw.reportDays -ge 1 -and [int]$raw.reportDays -le 3650) {
@@ -93,20 +92,16 @@ function Convert-LegacySettings {
         $exportDays = [int]$raw.exportDays
     }
 
-    $keepLogs = $logDays
-    if ($null -ne $raw.logDays -and [int]$raw.logDays -ge 1 -and [int]$raw.logDays -le 3650) {
-        $keepLogs = [int]$raw.logDays
-    }
-
     $time = [string]$raw.time
     if ($time -notmatch '^([01]\d|2[0-3]):[0-5]\d$') { $time = '00:05' }
 
+    # schemaVersion 2：logDays 已废弃（它从来没接上剪枝，日志改由 logging.retentionDays 治理）。
+    # 旧文件里的 logDays 不搬过来，搬过来只会让人以为它还在生效。
     $payload = [ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         reportDays    = $reportDays
         exportDays    = $exportDays
         time          = $time
-        logDays       = $keepLogs
     }
 
     $parent = Split-Path -Parent $Destination
@@ -123,13 +118,32 @@ function Resolve-Dotnet {
         return $candidate
     }
 
+    # 机器上可能不止一份 dotnet：Program Files 一份（系统装的）、用户目录一份
+    # （bootstrap-sdk.ps1 在缺 SDK 时装的）。它们的 SDK 清单互不可见，
+    # 选错的那个会在 global.json 上直接报 "compatible SDK not found"。
+    # 所以逐个试 `dotnet --version`（它会尊重 global.json），谁解析得出来就用谁；
+    # 顺序上系统那份优先，用户目录那份只作兜底。
+    $candidates = @()
+    $onPath = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($onPath) { $candidates += $onPath.Source }
+    if ($env:ProgramFiles) { $candidates += (Join-Path $env:ProgramFiles 'dotnet\dotnet.exe') }
     $local = Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\dotnet.exe'
-    if (Test-Path $local) { return $local }
+    if (Test-Path $local) { $candidates += $local }
 
-    $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        foreach ($candidate in $candidates) {
+            if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+            $version = (& $candidate --version 2>$null | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0 -and $version -match '^\d+\.\d+\.\d+') {
+                return $candidate
+            }
+        }
+    }
+    finally { $ErrorActionPreference = $previousEap }
 
-    throw '找不到 dotnet。请先运行 scripts\bootstrap-sdk.ps1 安装 SDK。'
+    throw '找不到满足 global.json 的 dotnet。请先运行 tools\bootstrap-sdk.ps1 安装 SDK。'
 }
 
 $dotnet = Resolve-Dotnet -Root $DotnetRoot
@@ -137,30 +151,23 @@ Write-Host "dotnet : $dotnet"
 
 $sdks = & $dotnet --list-sdks
 if (-not $sdks) {
-    throw "该 dotnet 没有任何 SDK。请运行 scripts\bootstrap-sdk.ps1。"
+    throw "该 dotnet 没有任何 SDK。请运行 tools\bootstrap-sdk.ps1。"
 }
 Write-Host "SDK    : $($sdks -join '; ')"
 
 Write-Host ''
 Write-Host '--- restore ---'
-# Release 下 Cli.csproj 固定了 RuntimeIdentifier=win-x64，restore 必须带同一个 RID，
-# 否则 project.assets.json 里没有 net8.0-windows/win-x64 目标，build 会报 NETSDK1047。
-& $dotnet restore DiskWriteTracker.sln -r $Runtime
+& $dotnet restore DiskWriteTracker.sln
 if ($LASTEXITCODE -ne 0) { throw 'restore 失败' }
 
 Write-Host ''
 Write-Host '--- build ---'
-# 不要给 sln 传 -r：解决方案级构建不支持指定 RID（NETSDK1134）。
-# Cli.csproj 自己声明了 RuntimeIdentifier=win-x64，restore 又带了同样的 RID，
-# 所以这里不带 -r 也会选到 net8.0-windows/win-x64 目标。
 & $dotnet build DiskWriteTracker.sln -c $Configuration --no-restore -v minimal
 if ($LASTEXITCODE -ne 0) { throw 'build 失败' }
 
 if (-not $SkipTests) {
     Write-Host ''
     Write-Host '--- test ---'
-    # tests\ 目前只有手工验证用的 fixture，没有测试项目，所以这里必然走 else。
-    # 分支保留：将来加了 csproj 就会自动纳入，而不是被静默跳过。
     $testProjects = Get-ChildItem -Path (Join-Path $repoRoot 'tests') -Filter '*.csproj' -Recurse -ErrorAction SilentlyContinue
     if ($testProjects) {
         & $dotnet test DiskWriteTracker.sln -c $Configuration --no-build -v minimal
@@ -179,18 +186,21 @@ if ($NoPublish) {
 
 Write-Host ''
 Write-Host '--- publish ---'
-$dist = Join-Path $repoRoot 'src\dist'
+$dist = Join-Path $repoRoot 'dist'
 if (-not (Test-Path $dist)) { New-Item -ItemType Directory -Path $dist -Force | Out-Null }
 
-# 注意：不要在此处 Remove-Item -Recurse。本机安全策略会拦截并 fail-closed。
-# 采用覆盖式发布：publish 会重写同名文件，残留的旧文件不影响运行。
-# 需要彻底重来请手动删除 dist 目录。
+# 覆盖式发布会留下上一版本的 native dll 与诊断组件（含不同 .NET 版本的文件）。
+# publish 前清空根目录文件，data\ 目录保留用户数据。
+foreach ($stale in @(Get-ChildItem -LiteralPath $dist -File -Force -ErrorAction SilentlyContinue)) {
+    [IO.File]::Delete($stale.FullName)
+}
 
-# publish 属性（RID / self-contained / 单文件 / 压缩 / R2R）全部固化在
-# DiskWriteTracker.Cli.csproj 的 Release 条件组里，这里不再传 -p:。
-# CI 走的是同一条命令，参数只有一处真源，本地与 CI 不可能漂移。
-# 产物由 csproj 的 StageDist target 落到 src\dist，不需要 -o。
-& $dotnet publish (Join-Path $repoRoot 'src\DiskWriteTracker.Cli\DiskWriteTracker.Cli.csproj') -c $Configuration
+& $dotnet publish (Join-Path $repoRoot 'src\DiskWriteTracker.Cli\DiskWriteTracker.Cli.csproj') `
+    -c $Configuration -r $Runtime --self-contained true `
+    -p:PublishSingleFile=false `
+    -p:PublishTrimmed=true `
+    -p:PublishReadyToRun=false `
+    -o $dist
 if ($LASTEXITCODE -ne 0) { throw 'publish 失败' }
 
 # ---------- 产物形态：只留 exe / README.txt / data ----------
@@ -201,12 +211,21 @@ $distData = Join-Path $dist 'data'
 $distConfig = Join-Path $dist 'config'
 $distLauncher = Join-Path $dist 'launcher'
 
-# 1) 先把老版本的用户偏好搬到 data\settings.json，再删 config —— 顺序反了会丢设置
+# 1) 先把老版本的用户偏好搬到 data\config\settings.json，再删 config —— 顺序反了会丢设置
+# 目标位置与运行时一致：偏好和样本分属两层，purge 才能用"删数据、留配置"一条规则表达
 $legacySettings = Join-Path $distConfig 'launcher.json'
-$newSettings = Join-Path $distData 'settings.json'
+$newSettings = Join-Path $distData 'config\settings.json'
 if ((Test-Path -LiteralPath $legacySettings) -and -not (Test-Path -LiteralPath $newSettings)) {
     Convert-LegacySettings -Source $legacySettings -Destination $newSettings
-    Write-Host '已将 config\launcher.json 迁移为 data\settings.json'
+    Write-Host '已将 config\launcher.json 迁移为 data\config\settings.json'
+}
+
+# 1b) schemaVersion 1 的 data\settings.json 也搬进 data\config\
+$rootSettings = Join-Path $distData 'settings.json'
+if ((Test-Path -LiteralPath $rootSettings) -and -not (Test-Path -LiteralPath $newSettings)) {
+    Convert-LegacySettings -Source $rootSettings -Destination $newSettings
+    [IO.File]::Delete($rootSettings)
+    Write-Host '已将 data\settings.json 迁移为 data\config\settings.json'
 }
 
 # 2) 点名删除上一版形态的文件
@@ -237,16 +256,29 @@ foreach ($dir in @($distLauncher, $distConfig, (Join-Path $dist 'exports'))) {
     }
 }
 
-# 4) README.txt 与 data\ 由 csproj 的 StageDist target 生成，这里不再重复拷贝。
-#    两处都做会造成「两处真源」，而 StageDist 那份才是 CI 也会走的那条路径。
+$readmeSrc = Join-Path $repoRoot 'tools\dist-assets\README.txt'
+if (Test-Path -LiteralPath $readmeSrc) {
+    Copy-Item $readmeSrc -Destination (Join-Path $dist 'README.txt') -Force
+}
 
-# 5) 形态断言：多一个条目都算失败，避免技术文件悄悄回流
-$expected = @('DiskWriteTracker.exe', 'README.txt', 'data')
+# 5) data 目录存在即触发引擎的便携模式：计划任务与菜单都落这里
+if (-not (Test-Path -LiteralPath $distData)) {
+    New-Item -ItemType Directory -Path $distData -Force | Out-Null
+}
+
+# 6) 形态断言：必须项齐全，且根目录只允许运行时产物扩展名（多文件发布：exe + 旁置 dll + runtimeconfig.json）
+$requiredEntries = @('DiskWriteTracker.exe', 'README.txt', 'data')
 $actual = @(Get-ChildItem -LiteralPath $dist -Force | ForEach-Object { $_.Name })
-$extra = @($actual | Where-Object { $expected -notcontains $_ })
-$missingItems = @($expected | Where-Object { $actual -notcontains $_ })
-if ($extra.Count -gt 0) { throw "dist 根目录出现预期外条目: $($extra -join ', ')" }
+$missingItems = @($requiredEntries | Where-Object { $actual -notcontains $_ })
 if ($missingItems.Count -gt 0) { throw "dist 根目录缺少: $($missingItems -join ', ')" }
+$allowedExt = @('.exe', '.dll', '.json', '.txt')
+$extra = @($actual | Where-Object {
+    $name = $_
+    if ($requiredEntries -contains $name) { return $false }
+    $ext = [IO.Path]::GetExtension($name).ToLowerInvariant()
+    return $allowedExt -notcontains $ext
+})
+if ($extra.Count -gt 0) { throw "dist 根目录出现预期外条目: $($extra -join ', ')" }
 
 $junk = @(Get-ChildItem -LiteralPath $dist -Recurse -Force -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Extension -in @('.ps1', '.cmd', '.bat', '.psm1') -or $_.Name -like '*.schema.json' })
@@ -274,11 +306,11 @@ if ($noArg.Text.Contains('请选择')) { throw 'stdin/stdout 重定向时仍进�
 if (-not $SkipTests) {
     Write-Host ''
     Write-Host '--- verify ---'
-    & (Join-Path $repoRoot 'scripts\verify.ps1') -Dist $dist
+    & (Join-Path $repoRoot 'tools\verify.ps1') -Dist $dist
     if ($LASTEXITCODE -ne 0) { throw '验收断言失败' }
 }
 
 Write-Host ''
-Write-Host "构建完成: $exe"
-$sizeMb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
-Write-Host "单文件大小: $sizeMb MB"
+Write-Host '构建完成'
+$totalBytes = (Get-ChildItem -LiteralPath $dist -Recurse -File -Force | Measure-Object Length -Sum).Sum
+Write-Host "发布总大小: $([math]::Round($totalBytes / 1MB, 1)) MB（多文件形态，依赖旁置 dll）"

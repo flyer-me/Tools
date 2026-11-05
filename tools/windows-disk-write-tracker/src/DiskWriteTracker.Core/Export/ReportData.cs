@@ -60,7 +60,7 @@ public sealed class ReportData
             })
             .ToList();
 
-        // 磁盘清单：颜色按出现顺序固定，保证同一台机器多次生成的配色一致
+        // 磁盘清单：颜色按出现顺序固定，使同一台机器多次生成的配色一致
         string[] palette = ["#2f6fed", "#e8710a", "#1a9e6f", "#c0341d", "#7b4bd3", "#0f8fa8"];
         var disks = summaries
             .OrderBy(s => s.Model, StringComparer.Ordinal)

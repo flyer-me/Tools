@@ -15,6 +15,7 @@ param(
     [string]$TaskName = 'DiskWriteTracker_DailySample',
     [string]$Time = '00:05',
     [switch]$PurgeData,
+    [switch]$PurgeAll,
     [switch]$DryRun,
     [string]$DataDirectory
 )
@@ -70,7 +71,99 @@ function Build-Task {
     return New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal
 }
 
-if ($DryRun) {
+function Add-TreeItems {
+    <# 把 $Path 下的所有条目收进 $Files / $Dirs（不含 $Path 自身）。 #>
+    param([string]$Path, $Files, $Dirs)
+
+    foreach ($child in @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)) {
+        if ($child.PSIsContainer) {
+            [void]$Dirs.Add($child.FullName)
+            Add-TreeItems -Path $child.FullName -Files $Files -Dirs $Dirs
+        }
+        else {
+            [void]$Files.Add($child.FullName)
+        }
+    }
+}
+
+function Get-PurgePlan {
+    <#
+      卸载时的删除清单。dry-run 与实际删除必须走同一个函数：
+      否则"预览说只删 A、实际删了 A+B"这种漂移永远测不出来，而它恰恰是最危险的一类错误。
+      -PurgeData 保留 config\（用户偏好），-PurgeAll 一个不留。
+    #>
+    param([string]$Root, [string]$Mode)
+
+    $plan = @{ mode = $Mode; root = $Root; files = @(); dirs = @(); kept = @(); rootRemovable = $false }
+
+    if ($Mode -eq 'none' -or [string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root)) {
+        return $plan
+    }
+
+    $files = New-Object System.Collections.ArrayList
+    $dirs = New-Object System.Collections.ArrayList
+    $kept = New-Object System.Collections.ArrayList
+
+    # 保留判定按"目录层级"做，绝不按路径前缀比较。
+    # 传进来的 data 目录可能是 8.3 短名（例如 ...\ADMINI~1\...），而 Get-ChildItem 枚举出来的
+    # FullName 是全名，两边前缀一比就全不匹配 —— config 会被当成可删项，用户偏好就没了。
+    # 只认"根目录下第一层里名字叫 config 的那个目录"，与路径怎么写的无关。
+    $keepConfig = ($Mode -eq 'data')
+    $configDir = Join-Path $Root 'config'
+
+    foreach ($child in @(Get-ChildItem -LiteralPath $Root -Force -ErrorAction SilentlyContinue)) {
+        if ($keepConfig -and $child.PSIsContainer -and $child.Name -eq 'config') {
+            foreach ($f in @(Get-ChildItem -LiteralPath $child.FullName -Recurse -Force -ErrorAction SilentlyContinue)) {
+                if (-not $f.PSIsContainer) { [void]$kept.Add($f.FullName) }
+            }
+            continue
+        }
+
+        if ($child.PSIsContainer) {
+            [void]$dirs.Add($child.FullName)
+            Add-TreeItems -Path $child.FullName -Files $files -Dirs $dirs
+        }
+        else {
+            [void]$files.Add($child.FullName)
+        }
+    }
+
+    $plan.files = @($files)
+    # 目录必须自底向上删：父目录非空时删除会失败
+    $plan.dirs = @($dirs | Sort-Object -Property @{ Expression = { $_.Length } } -Descending)
+    $plan.kept = @($kept)
+    $plan.rootRemovable = ($plan.kept.Count -eq 0) -and (-not (Test-Path -LiteralPath $configDir))
+
+    return $plan
+}
+
+function Invoke-Purge {
+    param([hashtable]$Plan)
+
+    $deletedFiles = 0
+    $deletedDirs = 0
+    $failed = New-Object System.Collections.ArrayList
+
+    foreach ($file in $Plan.files) {
+        try { [IO.File]::Delete($file); $deletedFiles++ }
+        catch { [void]$failed.Add("$file : $($_.Exception.Message)") }
+    }
+
+    foreach ($dir in $Plan.dirs) {
+        try { [IO.Directory]::Delete($dir, $false); $deletedDirs++ }
+        catch { [void]$failed.Add("$dir : $($_.Exception.Message)") }
+    }
+
+    $rootRemoved = $false
+    if ($Plan.rootRemovable) {
+        try { [IO.Directory]::Delete($Plan.root, $false); $rootRemoved = $true }
+        catch { [void]$failed.Add("$($Plan.root) : $($_.Exception.Message)") }
+    }
+
+    return @{ deletedFiles = $deletedFiles; deletedDirs = $deletedDirs; rootRemoved = $rootRemoved; failed = @($failed) }
+}
+
+if ($DryRun -and $Action -eq 'install') {
     # 只构造任务对象并回显配置，不写入任务计划程序。用于在无管理员权限时验证参数是否可用。
     $task = Build-Task -RunLevel 'Highest' -LogonType 'S4U'
     Write-Result @{
@@ -201,29 +294,52 @@ switch ($Action) {
     }
 
     'uninstall' {
+        # 注意：这里只查询，不注销。注销动作必须放到 dry-run 分支之后 ——
+        # 否则 uninstall --dry-run 会真的把任务删掉，而用户以为只是预览。
         $task = Get-ExistingTask
-        $removed = $false
 
+        $mode = 'none'
+        if ($PurgeAll) { $mode = 'all' } elseif ($PurgeData) { $mode = 'data' }
+
+        $plan = Get-PurgePlan -Root $DataDirectory -Mode $mode
+
+        if ($DryRun) {
+            # 只输出计划；卸载不可逆，预览先列出待删与待保留文件。
+            Write-Result @{
+                ok              = $true
+                action          = 'uninstall'
+                dryRun          = $true
+                taskName        = $TaskName
+                taskPath        = $TaskPath
+                taskInstalled   = [bool]$task
+                purgeMode       = $mode
+                dataDirectory   = $DataDirectory
+                willDeleteFiles = @($plan.files)
+                willDeleteDirs  = @($plan.dirs)
+                willKeep        = @($plan.kept)
+                rootRemovable   = $plan.rootRemovable
+            }
+            exit 0
+        }
+
+        $removed = $false
         if ($task) {
             Unregister-ScheduledTask -TaskPath $TaskPath -TaskName $TaskName -Confirm:$false
             $removed = $true
         }
 
-        $dataRemoved = $false
-        $dataNote = '数据已保留'
+        $result = Invoke-Purge -Plan $plan
 
-        if ($PurgeData -and $DataDirectory -and (Test-Path $DataDirectory)) {
-            try {
-                Get-ChildItem -Path $DataDirectory -Recurse -File | Remove-Item -Force -Confirm:$false
-                Get-ChildItem -Path $DataDirectory -Recurse -Directory | Sort-Object FullName -Descending |
-                    Remove-Item -Force -Recurse -Confirm:$false
-                Remove-Item -Path $DataDirectory -Force -Confirm:$false
-                $dataRemoved = $true
-                $dataNote = '数据已删除'
+        $note = switch ($mode) {
+            'all' {
+                if ($result.rootRemoved) { '任务与全部数据已删除（含偏好设置）' }
+                else { "已删除 $($result.deletedFiles) 个文件，目录未能整体移除" }
             }
-            catch {
-                $dataNote = "数据删除失败: $($_.Exception.Message)"
+            'data' {
+                if ($result.failed.Count -eq 0) { '任务已移除，样本数据已删除，偏好设置保留' }
+                else { "样本已删除，$($result.failed.Count) 项未能删除（可能被占用）" }
             }
+            default { '任务已移除，数据已保留' }
         }
 
         Write-Result @{
@@ -232,8 +348,14 @@ switch ($Action) {
             taskName      = $TaskName
             taskPath      = $TaskPath
             taskRemoved   = $removed
-            dataRemoved   = $dataRemoved
-            dataNote      = $dataNote
+            purgeMode     = $mode
+            dataRemoved   = ($mode -ne 'none' -and $result.failed.Count -eq 0 -and ($result.deletedFiles -gt 0 -or $result.rootRemoved))
+            deletedFiles  = $result.deletedFiles
+            deletedDirs   = $result.deletedDirs
+            rootRemoved   = $result.rootRemoved
+            kept          = @($plan.kept)
+            dataNote      = $note
+            errors        = @($result.failed)
         }
         exit 0
     }

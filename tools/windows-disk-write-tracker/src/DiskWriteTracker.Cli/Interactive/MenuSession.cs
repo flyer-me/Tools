@@ -1,4 +1,5 @@
 using DiskWriteTracker.Core.Config;
+using DiskWriteTracker.Core.Logging;
 using DiskWriteTracker.Core.Store;
 
 namespace DiskWriteTracker.Cli.Interactive;
@@ -45,6 +46,11 @@ internal sealed class MenuSession
         var resolution = RuntimePaths.ResolveDataDirectory(null, config);
         var settings = UserSettingsStore.Load(resolution.Directory, config.DailyTime);
 
+        // 菜单是"每天至少一次"的第二个入口：装了计划任务的机器上采样已经剪过，
+        // 纯手动用的机器上，剪枝只在此处触发。
+        LogRetention.PruneExpired(
+            resolution.Directory, config.LogRetentionDays, DateOnly.FromDateTime(DateTime.Now));
+
         var session = new MenuSession(resolution.Directory, resolution.IsPortable, Elevation.IsElevated, settings);
         session.RefreshSampleStats();
         session.RefreshTaskStatus();
@@ -59,28 +65,19 @@ internal sealed class MenuSession
 
         try
         {
-            if (!Directory.Exists(DataDirectory))
+            var files = SampleFile.Enumerate(DataDirectory);
+            if (files.Count == 0)
                 return;
 
-            DateOnly? newest = null;
+            SampleCount = new JsonlSampleStore(DataDirectory).CountLines();
 
-            foreach (SampleFile file in SampleFile.Enumerate(DataDirectory))
-            {
-                SampleCount += File.ReadLines(file.Path).Count(line => !string.IsNullOrWhiteSpace(line));
-
-                if (newest is null || file.Date > newest.Value)
-                    newest = file.Date;
-            }
-
-            if (newest is not null)
-            {
-                int days = DateOnly.FromDateTime(DateTime.Now).DayNumber - newest.Value.DayNumber;
-                StaleDays = days < 0 ? 0 : days;
-            }
+            // Enumerate 已按日期升序，末位即最新
+            int days = DateOnly.FromDateTime(DateTime.Now).DayNumber - files[^1].Date.DayNumber;
+            StaleDays = days < 0 ? 0 : days;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // 读不到就当没有样本，菜单仍可用
+            // 读取失败时按无样本处理
         }
     }
 

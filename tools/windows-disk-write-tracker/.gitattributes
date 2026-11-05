@@ -1,0 +1,20 @@
+# 统一换行，避免在 core.autocrlf=false 的机器上 clone 出 LF 结尾的批处理/脚本
+* text=auto eol=lf
+
+# cmd.exe 对只有 LF 的批处理在 goto/label 边界上不可靠，必须 CRLF
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Windows PowerShell 5.1 执行外部脚本时按 ANSI 解析无 BOM 文件，脚本源码保持 CRLF
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+
+*.sln text eol=crlf
+*.txt text eol=crlf
+
+# 测试样本逐行解析，固定 LF 便于与代码断言对齐
+*.jsonl text eol=lf
+
+*.png binary
+*.exe binary
+*.zip binary

@@ -1,9 +1,7 @@
-using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Unicode;
-using DiskWriteTracker.Core.Analysis;
 
 namespace DiskWriteTracker.Core.Export;
 
@@ -21,7 +19,8 @@ public static class HtmlReportBuilder
     private static readonly JsonSerializerOptions DataJson = new()
     {
         WriteIndented = false,
-        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
+        TypeInfoResolver = ReportJsonContext.Default
     };
 
     public static string Build(ReportData data)
@@ -49,18 +48,6 @@ public static class HtmlReportBuilder
         sb.Append("</div>\n</body>\n</html>\n");
 
         return sb.ToString();
-    }
-
-    /// <summary>兼容旧调用点的重载。内部转成 ReportData，行为与公开入口一致。</summary>
-    public static string Build(
-        IReadOnlyList<DailyStat> stats,
-        IReadOnlyList<DiskDailySummary> summaries,
-        string dataDirectory,
-        string rangeLabel,
-        DateTimeOffset generatedAt)
-    {
-        var data = ReportData.From(stats, summaries, dataDirectory, rangeLabel, 90, generatedAt);
-        return Build(data);
     }
 
     /// <summary>质量标记的中文标签，供 CSV 导出与命令行共用。</summary>
@@ -210,20 +197,8 @@ public static class HtmlReportBuilder
         _ => method
     };
 
-    /// <summary>与 CsvExporter.FormatBytes 保持一致：1000 进制、最多 3 位小数、无千分位。</summary>
-    private static string FormatBytes(long? bytes)
-    {
-        if (!bytes.HasValue) return "—";
-        double value = bytes.Value;
-        string[] units = ["B", "KB", "MB", "GB", "TB", "PB"];
-        int unit = 0;
-        while (value >= 1000 && unit < units.Length - 1)
-        {
-            value /= 1000;
-            unit++;
-        }
-        return value.ToString("0.###", CultureInfo.InvariantCulture) + " " + units[unit];
-    }
+    /// <summary>报表里空值呈现为 "—"。CSV 那边是空串，所以只包装一层，不复制实现。</summary>
+    private static string FormatBytes(long? bytes) => CsvExporter.FormatBytes(bytes, "—");
 
     private static string E(string? value) => string.IsNullOrEmpty(value)
         ? string.Empty

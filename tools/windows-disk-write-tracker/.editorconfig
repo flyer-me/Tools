@@ -1,0 +1,9 @@
+root = true
+
+[*.cs]
+# 教训：HtmlReportBuilder 的"兼容旧调用点"重载在仓里躺了很久，还把 rangeDays 写死成 90；
+# Nvme 的 TotalBytesWritten 与 DiskProbeService 各算一遍，溢出行为还不一致。
+dotnet_diagnostic.IDE0051.severity = error
+dotnet_diagnostic.IDE0052.severity = error
+dotnet_diagnostic.CS0169.severity = error
+dotnet_diagnostic.CS0414.severity = error

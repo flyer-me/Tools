@@ -50,18 +50,25 @@
 就在程序旁边的 data 文件夹里：
 
   samples-*.jsonl   每天采样到的原始数值
-  logs\             运行日志
-  exports\          报表（report.html）与导出的 CSV（按下面设置的天数导出）
-  settings.json     你的偏好设置
+  logs\             运行日志（自动清理，见下）
+  exports\          报表（report.html）与导出的 CSV
+  config\settings.json
+                    你的偏好设置
 
 settings.json 可以用记事本直接改：
 
   reportDays   报表默认看最近多少天（默认 400）
   exportDays   导出默认多少天（默认 400）
   time         每日采样时间（默认 00:05）
-  logDays      日志保留多少天（默认 30）
 
 改错了也不要紧，程序会退回默认值。
+
+日志不用管：超过 30 天的自动删除，单个文件超过 1 MB 会自动分成 .1、.2 备份额。
+想改这两个数字，在程序旁边建一个 config\default.json，写上：
+
+  { "logging": { "retentionDays": 30, "maxFileBytes": 1048576 } }
+
+不建这个文件就用内置的默认值，多数人不需要建。
 
 
 数字准不准
@@ -79,20 +86,26 @@ settings.json 可以用记事本直接改：
 
 升级
 ----
-用新版本里的 DiskWriteTracker.exe 覆盖旧的就行。
+用新版本的整个文件夹覆盖旧目录（exe 与旁置的 dll、json 必须成套更新）。
 
 data 文件夹和每日计划任务都不用动，历史数据继续累积。
 
-如果你以前用过更早的版本，程序旁边可能还留着几个旧文件，可以一并删掉，
-不影响使用。
+exe 旁边的 dll 与 json 是运行必需的，请与 exe 一起保留。
 
 
 卸载
 ----
-选 5 移除每日计划任务。
+选 5 移除每日计划任务。三档，看你输入什么：
 
-默认只删任务，样本数据保留。
-如果连数据一起删，按提示输入 DELETE。
+  直接回车    只删任务，样本、日志、偏好设置全部保留
+  DELETE      连样本和日志一起删，偏好设置保留
+  DELETE ALL  连偏好设置也删掉
+
+拿不准就先看计划再决定。在终端里执行：
+
+  DiskWriteTracker.exe schedule uninstall --purge-data --dry-run
+
+它会逐个列出将要删除和将要保留的文件，一个都不会真删。
 
 
 已知限制

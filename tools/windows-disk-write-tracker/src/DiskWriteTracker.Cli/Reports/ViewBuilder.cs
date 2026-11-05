@@ -10,18 +10,20 @@ namespace DiskWriteTracker.Cli.Reports;
 internal static class ViewBuilder
 {
     /// <summary>
-    /// 窗口起点（含）。日期口径只在这里定义一次：命令入口、日统计、导出若各算各的，
-    /// 跨零点就会一个用昨天一个用今天，窗口边界错开一天。
+    /// "最近 N 天"的起点。全仓库只此一处定义：这个口径一旦在两处各写一遍，
+    /// 差一格（-N 还是 -N+1）会让报表与 CSV 相差整整一天。
     /// </summary>
-    public static string WindowStart(int days)
-        => DateOnly.FromDateTime(DateTime.Now).AddDays(-days + 1).ToString("yyyy-MM-dd");
+    public static DateOnly WindowStart(int days, DateOnly today) => today.AddDays(-days + 1);
+
+    public static string WindowStartText(int days, DateOnly today)
+        => WindowStart(days, today).ToString("yyyy-MM-dd");
 
     public static (IReadOnlyList<DailyStat> Stats, IReadOnlyList<DiskDailySummary> Summaries) Build(
         IReadOnlyList<SampleRecord> samples,
         int days)
     {
         var today = DateOnly.FromDateTime(DateTime.Now);
-        string from = WindowStart(days);
+        string from = WindowStartText(days, today);
 
         var allStats = DailyAggregator.Aggregate(samples);
         var stats = allStats.Where(s => string.CompareOrdinal(s.LocalDate, from) >= 0).ToList();

@@ -10,9 +10,6 @@ public sealed record PhysicalDiskInfo(
     long? SizeBytes,
     string AccessLevel)
 {
-    public bool HasReadWriteAccess => string.Equals(AccessLevel, "readwrite", StringComparison.OrdinalIgnoreCase);
-
-    public bool HasAnyAccess => !string.Equals(AccessLevel, "none", StringComparison.OrdinalIgnoreCase);
     /// <summary>Windows 对 NVMe 常返回合成序列号（形如 0000_0000_..._XXXX.），不可作为稳定标识。</summary>
     public bool HasSyntheticSerial => LooksSynthetic(SerialNumber);
 

@@ -42,22 +42,6 @@ internal static class StartMenuShortcut
         }
     }
 
-    public static bool Remove()
-    {
-        try
-        {
-            if (!File.Exists(ShortcutPath))
-                return true;
-
-            File.Delete(ShortcutPath);
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
     private static bool Exists(string exePath)
     {
         string? current = ReadTarget();

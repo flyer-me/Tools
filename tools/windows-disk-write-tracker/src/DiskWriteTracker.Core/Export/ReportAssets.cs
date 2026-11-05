@@ -3,7 +3,7 @@ using System.Text;
 namespace DiskWriteTracker.Core.Export;
 
 /// <summary>
-/// 读取内嵌的报表样式与脚本。以 EmbeddedResource 打包，单文件发布时自动带入，无需外部文件。
+/// 读取内嵌的报表样式与脚本，以 EmbeddedResource 随程序集打包。
 /// </summary>
 internal static class ReportAssets
 {

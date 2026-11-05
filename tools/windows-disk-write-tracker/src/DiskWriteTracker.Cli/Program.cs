@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using DiskWriteTracker.Cli.Interactive;
 using DiskWriteTracker.Cli.Reports;
 using DiskWriteTracker.Core.Analysis;
 using DiskWriteTracker.Core.Collect;
@@ -23,7 +24,8 @@ internal static class Program
     {
         WriteIndented = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        TypeInfoResolver = CliJsonContext.Default
     };
 
     private static int Main(string[] args)
@@ -34,7 +36,7 @@ internal static class Program
         }
         catch (IOException)
         {
-            // 没有控制台的宿主（服务、某些终端包装器）设不了编码，不影响后续
+            // 没有控制台的宿主（服务、某些终端包装器）无法设置编码
         }
 
         if (args.Length == 0)
@@ -61,7 +63,6 @@ internal static class Program
                 "disks" => Disks(options),
                 "probe" => Probe(options),
                 "sample" => Sample(options),
-                "history" => History(options),
                 "daily" => Daily(options),
                 "report" => Report(options),
                 "export" => Export(options),
@@ -80,7 +81,7 @@ internal static class Program
             }
             catch
             {
-                // 连目录都算不出来时放弃记录，不影响退出码
+                // 数据目录解析失败时跳过该行日志
             }
 
             return 5;
@@ -97,15 +98,13 @@ internal static class Program
               DiskWriteTracker disks    [--json]                      枚举物理磁盘
               DiskWriteTracker probe    [--json]                      只读预览累计写入，不落盘
               DiskWriteTracker sample   [--json]                      采样一次并记录
-              DiskWriteTracker history  [--days N] [--json]           查看已记录的样本（默认全部）
-              DiskWriteTracker daily show    [--days N] [--json]      查看每日增量
-              DiskWriteTracker daily rebuild [--json]                 重算全部每日增量
+              DiskWriteTracker daily    [--days N] [--json]           查看每日增量
               DiskWriteTracker report   [--days N] [--out 路径]       生成离线 HTML 报表
-              DiskWriteTracker export   csv [--days N] [--all] [--out 目录]
-                                                                      导出 CSV（默认同窗口，--all 导全部历史）
+              DiskWriteTracker export   csv [--days N] [--out 目录]   导出 CSV（日统计 + 原始样本）
               DiskWriteTracker schedule status                        查看定时任务状态
               DiskWriteTracker schedule install [--time HH:mm]        安装/更新每日任务
-              DiskWriteTracker schedule uninstall [--purge-data]      卸载任务（默认保留数据）
+              DiskWriteTracker schedule uninstall [--purge-data | --purge-all] [--dry-run]
+                                                                      卸载任务（默认只删任务）
 
             数据来自硬盘固件上报的累计写入计数器，只读采样，不联网。
             """);
@@ -127,37 +126,38 @@ internal static class Program
         var disks = DiskEnumerator.Enumerate();
         var config = AppConfigLoader.Load();
         var resolution = RuntimePaths.ResolveDataDirectory(DataDirOverride, config);
-
-        // 只要条数：解析全部 JSON 只为打印一个数字不值得
+        // 自检只需要"有多少条"，不需要每条的内容 —— 数行不开解析器
         int sampleCount = new JsonlSampleStore(resolution.Directory).CountLines();
 
         if (options.Json)
         {
-            WriteJson(new
+            WriteJson(new JsonEnvelope<DoctorData>
             {
-                ok = true,
-                data = new
+                Ok = true,
+                Data = new DoctorData
                 {
-                    os = Environment.OSVersion.VersionString,
-                    osBuild = Environment.OSVersion.Version.Build,
-                    runtime = Environment.Version.ToString(),
-                    isAdmin = elevated,
-                    enumeratedDrives = disks.Count,
-                    dataDirectory = resolution.Directory,
-                    dataDirectoryIsFallback = resolution.IsFallback,
-                    dataDirectoryIsPortable = resolution.IsPortable,
-                    dataDirectoryWarning = resolution.Warning,
-                    migrationNote = resolution.MigrationNote,
-                    sampleCount,
-                    config = new
+                    Os = Environment.OSVersion.VersionString,
+                    OsBuild = Environment.OSVersion.Version.Build,
+                    Runtime = Environment.Version.ToString(),
+                    IsAdmin = elevated,
+                    EnumeratedDrives = disks.Count,
+                    DataDirectory = resolution.Directory,
+                    DataDirectoryIsFallback = resolution.IsFallback,
+                    DataDirectoryIsPortable = resolution.IsPortable,
+                    DataDirectoryWarning = resolution.Warning,
+                    MigrationNote = resolution.MigrationNote,
+                    SampleCount = sampleCount,
+                    SettingsPath = Interactive.UserSettingsStore.PathFor(resolution.Directory),
+                    LogDirectory = LogRetention.DirectoryFor(resolution.Directory),
+                    Config = new DoctorConfigData
                     {
-                        sourcePath = config.SourcePath,
-                        loadWarning = config.LoadWarning,
-                        retentionDays = config.RetentionDays,
-                        timeoutSeconds = config.TimeoutSeconds,
-                        dailyTime = config.DailyTime,
-                        requireWearGate = config.RequireWearGate,
-                        logLevel = config.LogLevel
+                        SourcePath = config.SourcePath,
+                        LoadWarning = config.LoadWarning,
+                        RetentionDays = config.RetentionDays,
+                        TimeoutSeconds = config.TimeoutSeconds,
+                        DailyTime = config.DailyTime,
+                        RequireWearGate = config.RequireWearGate,
+                        LogLevel = config.LogLevel
                     }
                 }
             });
@@ -172,6 +172,8 @@ internal static class Program
         Console.WriteLine($"  部署方式     : {(resolution.IsPortable ? "便携（数据跟在 exe 同级 data 目录）" : "系统目录")}");
         Console.WriteLine($"  数据目录     : {resolution.Directory}{(resolution.IsFallback ? "  [已降级]" : string.Empty)}");
         Console.WriteLine($"  已记录样本   : {sampleCount} 条");
+        Console.WriteLine($"  偏好设置     : {Interactive.UserSettingsStore.PathFor(resolution.Directory)}");
+        Console.WriteLine($"  日志目录     : {LogRetention.DirectoryFor(resolution.Directory)}");
         Console.WriteLine($"  配置文件     : {(config.SourcePath.Length > 0 && File.Exists(config.SourcePath) ? config.SourcePath : "未找到，使用内置默认值")}");
         Console.WriteLine($"  采样设置     : 每天 {config.DailyTime} ｜ 保留 {config.RetentionDays} 天 ｜ 任务超时 {config.TimeoutSeconds}s");
         if (resolution.MigrationNote is not null)
@@ -189,24 +191,24 @@ internal static class Program
 
         if (options.Json)
         {
-            WriteJson(new
+            WriteJson(new JsonEnvelope<DisksData>
             {
-                ok = disks.Count > 0,
-                data = new
+                Ok = disks.Count > 0,
+                Data = new DisksData
                 {
-                    count = disks.Count,
-                    disks = disks.Select(d => new
+                    Count = disks.Count,
+                    Disks = disks.Select(d => new DiskItemData
                     {
-                        driveNumber = d.DriveNumber,
-                        model = d.Model,
-                        serialNumber = d.SerialNumber,
-                        serialIsSynthetic = d.HasSyntheticSerial,
-                        diskKey = SampleRecord.BuildDiskKey(d.Model, d.SerialNumber, d.SizeBytes, d.HasSyntheticSerial),
-                        firmware = d.Firmware,
-                        busType = d.BusType,
-                        sizeBytes = d.SizeBytes,
-                        accessLevel = d.AccessLevel
-                    })
+                        DriveNumber = d.DriveNumber,
+                        Model = d.Model,
+                        SerialNumber = d.SerialNumber,
+                        SerialIsSynthetic = d.HasSyntheticSerial,
+                        DiskKey = SampleRecord.BuildDiskKey(d.Model, d.SerialNumber, d.SizeBytes, d.HasSyntheticSerial),
+                        Firmware = d.Firmware,
+                        BusType = d.BusType,
+                        SizeBytes = d.SizeBytes,
+                        AccessLevel = d.AccessLevel
+                    }).ToList()
                 }
             });
             return disks.Count > 0 ? 0 : 1;
@@ -238,33 +240,33 @@ internal static class Program
 
         if (options.Json)
         {
-            WriteJson(new
+            WriteJson(new JsonEnvelope<ProbeData>
             {
-                ok = any,
-                data = new
+                Ok = any,
+                Data = new ProbeData
                 {
-                    capturedUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
-                    count = results.Count,
-                    disks = results.Select(r => new
+                    CapturedUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+                    Count = results.Count,
+                    Disks = results.Select(r => new ProbeItemData
                     {
-                        driveNumber = r.DriveNumber,
-                        model = r.Model,
-                        serialNumber = r.SerialNumber,
-                        busType = r.BusType,
-                        source = r.Source,
-                        attributeRef = r.AttributeRef,
-                        rawValue = r.RawValue,
-                        rawUnit = r.RawUnit,
-                        unitScale = r.UnitScale,
-                        totalBytes = r.TotalBytes,
-                        totalTB = ToTb(r.TotalBytes),
-                        quality = r.Quality,
-                        impliedTbwTb = r.ImpliedTbwTb,
-                        note = r.Note,
-                        temperatureC = r.TemperatureCelsius,
-                        powerOnHours = r.PowerOnHours,
-                        percentageUsed = r.PercentageUsed
-                    })
+                        DriveNumber = r.DriveNumber,
+                        Model = r.Model,
+                        SerialNumber = r.SerialNumber,
+                        BusType = r.BusType,
+                        Source = r.Source,
+                        AttributeRef = r.AttributeRef,
+                        RawValue = r.RawValue,
+                        RawUnit = r.RawUnit,
+                        UnitScale = r.UnitScale,
+                        TotalBytes = r.TotalBytes,
+                        TotalTb = ToTb(r.TotalBytes),
+                        Quality = r.Quality,
+                        ImpliedTbwTb = r.ImpliedTbwTb,
+                        Note = r.Note,
+                        TemperatureC = r.TemperatureCelsius,
+                        PowerOnHours = r.PowerOnHours,
+                        PercentageUsed = r.PercentageUsed
+                    }).ToList()
                 }
             });
             return any ? 0 : 4;
@@ -304,28 +306,28 @@ internal static class Program
 
         if (options.Json)
         {
-            WriteJson(new
+            WriteJson(new JsonEnvelope<SampleData>
             {
-                ok = outcome.Records.Count > 0,
-                data = new
+                Ok = outcome.Records.Count > 0,
+                Data = new SampleData
                 {
-                    runId = outcome.RunId,
-                    dataDirectory = outcome.DataDirectory,
-                    dataDirectoryIsFallback = outcome.FallbackDataDirectory,
-                    dataDirectoryIsPortable = outcome.IsPortable,
-                    migrationNote = outcome.MigrationNote,
-                    file = outcome.FilePath,
-                    count = outcome.Records.Count,
-                    disks = outcome.Records.Select(r => new
+                    RunId = outcome.RunId,
+                    DataDirectory = outcome.DataDirectory,
+                    DataDirectoryIsFallback = outcome.FallbackDataDirectory,
+                    DataDirectoryIsPortable = outcome.IsPortable,
+                    MigrationNote = outcome.MigrationNote,
+                    File = outcome.FilePath,
+                    Count = outcome.Records.Count,
+                    Disks = outcome.Records.Select(r => new SampleItemData
                     {
-                        diskKey = r.DiskKey,
-                        model = r.Model,
-                        totalBytes = r.Bytes,
-                        totalTB = ToTb(r.Bytes),
-                        quality = r.Quality,
-                        source = r.Source,
-                        capturedLocal = r.CapturedLocal
-                    })
+                        DiskKey = r.DiskKey,
+                        Model = r.Model,
+                        TotalBytes = r.Bytes,
+                        TotalTb = ToTb(r.Bytes),
+                        Quality = r.Quality,
+                        Source = r.Source,
+                        CapturedLocal = r.CapturedLocal
+                    }).ToList()
                 }
             });
             return outcome.Records.Count > 0 ? 0 : 4;
@@ -354,118 +356,66 @@ internal static class Program
         return outcome.Records.Count > 0 ? 0 : 4;
     }
 
-    private static int History(CommandOptions options)
-    {
-        // 帮助里一直写着 --days，代码却从没读过；补齐：0 或不给即全量
-        int days = options.GetInt("days", 0);
-        var (resolution, samples) = LoadSamples(days > 0 ? days : null);
-
-        // 窗口读取会顺带带上窗口前的前驱样本（用于算首日增量），对"看最近 N 天"是噪声
-        if (days > 0)
-        {
-            string from = WindowStart(days);
-            samples = samples.Where(r => string.CompareOrdinal(r.LocalDate, from) >= 0).ToList();
-        }
-
-        if (options.Json)
-        {
-            WriteJson(new
-            {
-                ok = samples.Count > 0,
-                data = new
-                {
-                    dataDirectory = resolution.Directory,
-                    count = samples.Count,
-                    samples = samples.Select(r => new
-                    {
-                        CapturedLocal = r.CapturedLocal,
-                        LocalDate = r.LocalDate,
-                        DiskKey = r.DiskKey,
-                        Model = r.Model,
-                        Source = r.Source,
-                        Bytes = r.Bytes,
-                        totalTB = ToTb(r.Bytes),
-                        r.Quality
-                    })
-                }
-            });
-            return samples.Count > 0 ? 0 : 4;
-        }
-
-        if (samples.Count == 0)
-        {
-            Console.WriteLine($"尚无采样记录（数据目录 {resolution.Directory}）。");
-            Console.WriteLine("运行 DiskWriteTracker sample 采集第一条样本。");
-            return 0;
-        }
-
-        Console.WriteLine(days > 0 ? $"共 {samples.Count} 条样本（近 {days} 天）" : $"共 {samples.Count} 条样本");
-        foreach (var r in samples)
-            Console.WriteLine($"  {r.CapturedLocal}  {r.Model,-24} {FormatBytes(r.Bytes),10}  {QualityLabel(r.Quality)}");
-
-        return 0;
-    }
-
     // ---------- 每日增量 ----------
 
     private static int Daily(CommandOptions options)
     {
         string sub = options.Positional.Count > 0 ? options.Positional[0].ToLowerInvariant() : "show";
+        if (sub != "show")
+        {
+            Console.Error.WriteLine($"未知的 daily 子命令: {sub}（仅支持 show）");
+            return 2;
+        }
+
         int days = options.GetInt("days", 30);
 
-        // rebuild 写的是全量快照，用窗口重算会把 daily.json 写残
-        var (_, samples) = LoadSamples(sub == "rebuild" ? null : days);
+        // 窗口读取会带回起点之前的前驱，用于计算窗口第一天的增量
+        var (_, samples) = LoadSamples(days);
 
         if (samples.Count == 0)
         {
+            // 说清"窗口内没有"而不是"完全没有"，否则用户会以为历史数据丢了。
+            string message = $"最近 {days} 天没有采样数据";
+
             if (options.Json)
-                WriteJson(new { ok = false, data = new { count = 0, message = "尚无采样数据" } });
+                WriteJson(new JsonEnvelope<DailyEmptyData>
+                {
+                    Ok = false,
+                    Data = new DailyEmptyData { Count = 0, Message = message }
+                });
             else
-                Console.WriteLine($"近 {days} 天没有采样数据。先运行 DiskWriteTracker sample，或用 --days 放大窗口。");
+                Console.WriteLine(message + "。先运行 DiskWriteTracker sample，或用 --days 放宽窗口。");
 
             return 4;
         }
 
         var stats = DailyAggregator.Aggregate(samples);
-        string from = WindowStart(days);
+        string from = ViewBuilder.WindowStartText(days, DateOnly.FromDateTime(DateTime.Now));
         var filtered = stats.Where(s => string.CompareOrdinal(s.LocalDate, from) >= 0).ToList();
-
-        if (sub == "rebuild")
-        {
-            PersistDaily(stats);
-            if (options.Json)
-            {
-                WriteJson(new { ok = true, data = new { total = stats.Count, days = stats.Select(s => s.LocalDate).Distinct().Count() } });
-                return 0;
-            }
-
-            Console.WriteLine($"已重算 {stats.Count} 条日统计，覆盖 {stats.Select(s => s.LocalDate).Distinct().Count()} 天。");
-            return 0;
-        }
 
         if (options.Json)
         {
-            WriteJson(new
+            WriteJson(new JsonEnvelope<DailyData>
             {
-                ok = filtered.Count > 0,
-                data = new
+                Ok = filtered.Count > 0,
+                Data = new DailyData
                 {
-                    days,
-                    count = filtered.Count,
-                    stats = filtered.OrderByDescending(s => s.LocalDate, StringComparer.Ordinal).Select(s => new
+                    Days = days,
+                    Count = filtered.Count,
+                    Stats = filtered.OrderByDescending(s => s.LocalDate, StringComparer.Ordinal).Select(s => new DailyStatItemData
                     {
                         LocalDate = s.LocalDate,
                         Model = s.Model,
-                        dailyBytes = s.DeltaBytes,
-                        dailyHuman = FormatBytes(s.DeltaBytes),
-                        startBytes = s.StartBytes,
-                        endBytes = s.EndBytes,
+                        DailyBytes = s.DeltaBytes,
+                        DailyHuman = FormatBytes(s.DeltaBytes),
+                        StartBytes = s.StartBytes,
+                        EndBytes = s.EndBytes,
                         Method = s.Method,
                         Quality = s.Quality,
                         GapDays = s.GapDays,
                         SampleCount = s.SampleCount,
-                        s.Note
-                    })
+                        Note = s.Note
+                    }).ToList()
                 }
             });
             return filtered.Count > 0 ? 0 : 4;
@@ -483,34 +433,6 @@ internal static class Program
             Console.WriteLine($"{s.LocalDate,-12}{Trim(s.Model, 24),-26}{FormatBytes(s.DeltaBytes),12}  {QualityLabel(s.Quality),-6}{s.Note}");
 
         return 0;
-    }
-
-    private static void PersistDaily(IReadOnlyList<DailyStat> stats)
-    {
-        var resolution = RuntimePaths.ResolveDataDirectory(DataDirOverride);
-        Directory.CreateDirectory(resolution.Directory);
-        string path = Path.Combine(resolution.Directory, "daily.json");
-
-        var payload = new JsonArray();
-        foreach (var s in stats.OrderBy(x => x.LocalDate, StringComparer.Ordinal).ThenBy(x => x.DiskKey, StringComparer.Ordinal))
-        {
-            payload.Add(new JsonObject
-            {
-                ["localDate"] = s.LocalDate,
-                ["diskKey"] = s.DiskKey,
-                ["model"] = s.Model,
-                ["startBytes"] = s.StartBytes,
-                ["endBytes"] = s.EndBytes,
-                ["deltaBytes"] = s.DeltaBytes,
-                ["method"] = s.Method,
-                ["quality"] = s.Quality,
-                ["gapDays"] = s.GapDays,
-                ["sampleCount"] = s.SampleCount,
-                ["note"] = s.Note
-            });
-        }
-
-        File.WriteAllText(path, payload.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
     // ---------- 报表与导出 ----------
@@ -532,10 +454,10 @@ internal static class Program
 
         if (options.Json)
         {
-            WriteJson(new
+            WriteJson(new JsonEnvelope<ReportOutcomeData>
             {
-                ok = true,
-                data = new { file = outcome.File, bytes = outcome.Bytes, rows = outcome.Rows, disks = outcome.Disks }
+                Ok = true,
+                Data = new ReportOutcomeData { File = outcome.File, Bytes = outcome.Bytes, Rows = outcome.Rows, Disks = outcome.Disks }
             });
             return 0;
         }
@@ -557,28 +479,24 @@ internal static class Program
         }
 
         int days = options.GetInt("days", 90);
-
-        // --all：导出全部历史样本。默认与 daily.csv 用同一个窗口，
-        // 否则 exportDays 只对一半产物生效，而全量样本在 5 分钟采样下能到几十 MB。
-        bool all = options.Has("all");
-        var (resolution, samples) = LoadSamples(all ? null : days);
+        var (resolution, samples) = LoadSamples(days);
 
         // 默认落数据目录下的 exports，与 report 一致。
         // 早先锚定 exe 目录，会在用户手工执行 export 时于程序目录旁边凭空长出一个 exports 文件夹。
         string dir = options.Get("out") ?? Path.Combine(resolution.Directory, "exports");
-        var outcome = ExportWriter.WriteCsv(samples, days, dir, all);
+        var outcome = ExportWriter.WriteCsv(samples, days, dir);
 
         if (options.Json)
         {
-            WriteJson(new
+            WriteJson(new JsonEnvelope<ExportOutcomeData>
             {
-                ok = true,
-                data = new
+                Ok = true,
+                Data = new ExportOutcomeData
                 {
-                    daily = outcome.DailyFile,
-                    samples = outcome.SamplesFile,
-                    dailyRows = outcome.DailyRows,
-                    sampleRows = outcome.SampleRows
+                    DailyFile = outcome.DailyFile,
+                    SamplesFile = outcome.SamplesFile,
+                    DailyRows = outcome.DailyRows,
+                    SampleRows = outcome.SampleRows
                 }
             });
             return 0;
@@ -605,11 +523,7 @@ internal static class Program
                 ? ScheduleManager.Invoke("-Action", "install", "-ExePath", exePath, "-TaskName", ScheduleManager.DefaultTaskName, "-Time", options.Get("time") ?? "00:05", "-DryRun")
                 : ScheduleManager.Invoke("-Action", "install", "-ExePath", exePath, "-TaskName", ScheduleManager.DefaultTaskName, "-Time", options.Get("time") ?? "00:05"),
 
-            "uninstall" => ScheduleManager.Invoke(
-                "-Action", "uninstall",
-                "-TaskName", ScheduleManager.DefaultTaskName,
-                "-PurgeData:" + (options.Has("purge-data") ? "$true" : "$false"),
-                "-DataDirectory", RuntimePaths.ResolveDataDirectory(DataDirOverride).Directory),
+            "uninstall" => InvokeUninstall(options),
 
             "run" => ScheduleManager.Invoke("-Action", "run", "-TaskName", ScheduleManager.DefaultTaskName),
 
@@ -619,7 +533,7 @@ internal static class Program
         if (options.Json)
         {
             Console.WriteLine(string.IsNullOrWhiteSpace(result.RawJson)
-                ? JsonSerializer.Serialize(new { ok = false, error = result.Error }, JsonOptions)
+                ? JsonSerializer.Serialize(new JsonErrorEnvelope { Ok = false, Error = result.Error }, JsonOptions)
                 : result.RawJson);
             return result.Ok ? 0 : 7;
         }
@@ -648,6 +562,34 @@ internal static class Program
 
         PrintScheduleHuman(sub, result.RawJson);
         return 0;
+    }
+
+    /// <summary>
+    /// 卸载参数用增量方式拼。开关参数只能在"打开"时出现：
+    /// 用 -File 调用脚本时，`-PurgeData:$false` 会被当成一个字符串塞给 SwitchParameter，
+    /// 直接参数绑定失败 —— 而这条路径只有真的去卸载时才会走到，平时测不出来。
+    /// </summary>
+    private static ScheduleResult InvokeUninstall(CommandOptions options)
+    {
+        var args = new List<string>
+        {
+            "-Action", "uninstall",
+            "-TaskName", ScheduleManager.DefaultTaskName
+        };
+
+        // --purge-all 覆盖 --purge-data，两个都给时按更彻底的那个算
+        if (options.Has("purge-all"))
+            args.Add("-PurgeAll");
+        else if (options.Has("purge-data"))
+            args.Add("-PurgeData");
+
+        if (options.Has("dry-run"))
+            args.Add("-DryRun");
+
+        args.Add("-DataDirectory");
+        args.Add(RuntimePaths.ResolveDataDirectory(DataDirOverride).Directory);
+
+        return ScheduleManager.Invoke([.. args]);
     }
 
     private static void PrintScheduleHuman(string sub, string rawJson)
@@ -681,8 +623,8 @@ internal static class Program
             Console.WriteLine("定时任务: 已安装");
             Console.WriteLine($"  状态       : {node["state"]}");
             Console.WriteLine($"  运行权限   : {(node["runLevel"]?.ToString() == "Highest" ? "最高" : "普通")}");
-            Console.WriteLine($"  上次运行   : {FormatTime(node["lastRunTime"]?.ToString())}（{node["lastResultText"]}）");
-            Console.WriteLine($"  下次运行   : {FormatTime(node["nextRunTime"]?.ToString())}");
+            Console.WriteLine($"  上次运行   : {TaskStatusSnapshot.FormatTime(node["lastRunTime"]?.ToString())}（{node["lastResultText"]}）");
+            Console.WriteLine($"  下次运行   : {TaskStatusSnapshot.FormatTime(node["nextRunTime"]?.ToString())}");
             Console.WriteLine($"  错过的运行 : {node["missedRuns"]}");
             return;
         }
@@ -709,7 +651,7 @@ internal static class Program
             Console.WriteLine($"  名称     : {node["taskName"]}");
             Console.WriteLine($"  时间     : 每天 {node["time"]}");
             Console.WriteLine($"  运行权限 : {(node["runLevel"]?.ToString() == "Highest" ? "最高" : "普通")}");
-            Console.WriteLine($"  下次运行 : {FormatTime(node["nextRunTime"]?.ToString())}");
+            Console.WriteLine($"  下次运行 : {TaskStatusSnapshot.FormatTime(node["nextRunTime"]?.ToString())}");
 
             string? warning = node["warning"]?.ToString();
             if (!string.IsNullOrWhiteSpace(warning))
@@ -719,27 +661,73 @@ internal static class Program
 
         if (sub == "uninstall")
         {
+            if (node["dryRun"]?.GetValue<bool>() == true)
+            {
+                string mode = node["purgeMode"]?.ToString() ?? "none";
+                Console.WriteLine("卸载预演（没有删除任何东西）:");
+                Console.WriteLine($"  定时任务 : {(node["taskInstalled"]?.GetValue<bool>() == true ? "将移除" : "未安装")}");
+                Console.WriteLine($"  清理档位 : {PurgeModeLabel(mode)}");
+
+                var files = node["willDeleteFiles"] as JsonArray ?? [];
+                var dirs = node["willDeleteDirs"] as JsonArray ?? [];
+                var kept = node["willKeep"] as JsonArray ?? [];
+
+                Console.WriteLine($"  将删除   : {files.Count} 个文件，{dirs.Count} 个目录");
+                foreach (var file in files.Take(20))
+                    Console.WriteLine("    - " + file);
+
+                if (files.Count > 20)
+                    Console.WriteLine($"    …… 另有 {files.Count - 20} 个文件");
+
+                if (kept.Count > 0)
+                {
+                    Console.WriteLine($"  将保留   : {kept.Count} 个文件");
+                    foreach (var item in kept.Take(10))
+                        Console.WriteLine("    + " + item);
+                }
+
+                if (node["rootRemovable"]?.GetValue<bool>() == true)
+                    Console.WriteLine($"  目录       : {node["dataDirectory"]} 会被整体移除");
+
+                return;
+            }
+
             Console.WriteLine(node["taskRemoved"]?.GetValue<bool>() == true ? "定时任务已移除。" : "定时任务本就不存在。");
             Console.WriteLine("  " + node["dataNote"]);
+
+            if (node["kept"] is JsonArray keptFiles && keptFiles.Count > 0)
+                Console.WriteLine($"  保留偏好设置 {keptFiles.Count} 个文件（{node["dataDirectory"] ?? "config"}）。");
+
+            if (node["errors"] is JsonArray errors && errors.Count > 0)
+            {
+                Console.WriteLine($"  未能删除 {errors.Count} 项：");
+                foreach (var error in errors.Take(10))
+                    Console.WriteLine("    " + error);
+            }
         }
     }
 
+    private static string PurgeModeLabel(string mode) => mode switch
+    {
+        "all" => "全部删除（含偏好设置）",
+        "data" => "只删数据，保留偏好设置",
+        _ => "不删数据（仅移除任务）"
+    };
+
     // ---------- 公共 ----------
 
-    private static (RuntimePaths.Resolution Resolution, IReadOnlyList<SampleRecord> Samples) LoadSamples(int? days = null)
+    /// <summary>
+    /// 载入样本。days 为 null 表示全量；给天数则只打开窗口内的文件。
+    /// 返回值里可能混有"窗口起点之前的前驱"—— 那是算第一天增量的锚点，
+    /// 展示层要按日期再筛一次，别把它当成用户数据。
+    /// </summary>
+    private static (RuntimePaths.Resolution Resolution, IReadOnlyList<SampleRecord> Samples) LoadSamples(int days)
     {
         var resolution = RuntimePaths.ResolveDataDirectory(DataDirOverride, AppConfigLoader.Load());
         var store = new JsonlSampleStore(resolution.Directory);
 
-        // days 为空表示"要全部历史"（history / daily rebuild / export --all）。
-        // 给了窗口就只打开窗口内的文件，外加每块盘的前驱样本，让首日增量仍有基线。
-        return (resolution, days is { } window
-            ? store.ReadForWindow(window, DateOnly.FromDateTime(DateTime.Now))
-            : store.ReadAll());
+        return (resolution, store.ReadForWindow(days, DateOnly.FromDateTime(DateTime.Now)));
     }
-
-    /// <summary>窗口起点（含）。与 ReadForWindow / ViewBuilder 用同一口径，避免各算各的错开一天。</summary>
-    private static string WindowStart(int days) => ViewBuilder.WindowStart(days);
 
     private static void WriteJson(object payload) => Console.WriteLine(JsonSerializer.Serialize(payload, JsonOptions));
 
@@ -765,16 +753,6 @@ internal static class Program
     private static double? ToTb(long? bytes) => bytes.HasValue ? Math.Round(bytes.Value / 1e12, 4) : null;
 
     private static string Trim(string value, int max) => value.Length <= max ? value : value[..(max - 1)] + "…";
-
-    private static string FormatTime(string? iso)
-    {
-        if (string.IsNullOrWhiteSpace(iso))
-            return "—";
-
-        return DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt)
-            ? dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
-            : iso;
-    }
 
     internal static bool IsElevated()
     {

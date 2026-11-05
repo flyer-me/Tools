@@ -7,24 +7,37 @@
   "build": {
     "kind": "dotnet-msbuild",
     "project": "src/DiskWriteTracker.Cli/DiskWriteTracker.Cli.csproj",
-    "configuration": "Release"
+    "configuration": "Release",
+    "args": [
+      "-r", "win-x64",
+      "--self-contained", "true",
+      "-o", "dist"
+    ]
   },
   "runtime": {
     "kind": "exe",
-    "entry": "src/dist/DiskWriteTracker.exe"
+    "entry": "dist/DiskWriteTracker.exe"
   },
   "artifacts": [
     {
       "kind": "exe",
-      "pattern": "src/dist/*.exe"
+      "pattern": "dist/*.exe"
+    },
+    {
+      "kind": "lib",
+      "pattern": "dist/*.dll"
+    },
+    {
+      "kind": "runtimeconfig",
+      "pattern": "dist/*.json"
     },
     {
       "kind": "doc",
-      "pattern": "src/dist/README.txt"
+      "pattern": "dist/README.txt"
     },
     {
       "kind": "dir",
-      "pattern": "src/dist/data"
+      "pattern": "dist/data"
     }
   ]
 }

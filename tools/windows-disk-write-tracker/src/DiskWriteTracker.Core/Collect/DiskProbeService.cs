@@ -14,11 +14,6 @@ public sealed record DiskProbeResult
     public required string BusType { get; init; }
     public long? SizeBytes { get; init; }
 
-    /// <summary>实际取得的句柄权限：readwrite / read / none。决定哪些 IOCTL 可用。</summary>
-    public string AccessLevel { get; init; } = "none";
-
-    public bool HasReadWriteAccess => string.Equals(AccessLevel, "readwrite", StringComparison.OrdinalIgnoreCase);
-
     /// <summary>数据来源，如 nvme.healthlog / ata.smart。</summary>
     public required string Source { get; init; }
     public string? AttributeRef { get; init; }
@@ -58,25 +53,25 @@ public static class DiskProbeService
 
     private static DiskProbeResult Probe(PhysicalDiskInfo disk)
     {
-        var handle = NativeMethods.OpenPhysicalDrive(disk.DriveNumber, out DeviceAccess access, out int openError);
+        var handle = NativeMethods.OpenPhysicalDrive(disk.DriveNumber, out _, out int openError);
         if (handle is null)
         {
-            return Failure(disk, access, "open_failed", $"无法打开 PhysicalDrive{disk.DriveNumber}，Win32 错误 {openError}");
+            return Failure(disk, "open_failed", $"无法打开 PhysicalDrive{disk.DriveNumber}，Win32 错误 {openError}");
         }
 
         using (handle)
         {
             bool isNvme = string.Equals(disk.BusType, "NVMe", StringComparison.OrdinalIgnoreCase);
 
-            return isNvme ? ProbeNvme(disk, handle, access) : ProbeAta(disk, handle, access);
+            return isNvme ? ProbeNvme(disk, handle) : ProbeAta(disk, handle);
         }
     }
 
-    private static DiskProbeResult ProbeNvme(PhysicalDiskInfo disk, Microsoft.Win32.SafeHandles.SafeFileHandle handle, DeviceAccess access)
+    private static DiskProbeResult ProbeNvme(PhysicalDiskInfo disk, Microsoft.Win32.SafeHandles.SafeFileHandle handle)
     {
         if (!Nvme.TryReadHealthLog(handle, out NvmeHealthLog health, out int healthError))
         {
-            return Failure(disk, access, "nvme_healthlog_failed",
+            return Failure(disk, "nvme_healthlog_failed",
                 $"IOCTL_STORAGE_QUERY_PROPERTY 读取 NVMe 健康日志失败，Win32 错误 {healthError}");
         }
 
@@ -109,7 +104,6 @@ public static class DiskProbeService
             Firmware = firmware,
             BusType = disk.BusType,
             SizeBytes = disk.SizeBytes,
-            AccessLevel = access.ToString().ToLowerInvariant(),
             Source = "nvme.healthlog",
             AttributeRef = "healthlog[0x02].data_units_written",
             RawValue = (long)Math.Min(health.DataUnitsWritten, long.MaxValue),
@@ -126,11 +120,11 @@ public static class DiskProbeService
         };
     }
 
-    private static DiskProbeResult ProbeAta(PhysicalDiskInfo disk, Microsoft.Win32.SafeHandles.SafeFileHandle handle, DeviceAccess access)
+    private static DiskProbeResult ProbeAta(PhysicalDiskInfo disk, Microsoft.Win32.SafeHandles.SafeFileHandle handle)
     {
         if (!AtaSmart.TryReadAttributes(handle, out AtaAttributeTable table, out AtaTransport transport, out int smartError))
         {
-            return Failure(disk, access, "ata_smart_failed",
+            return Failure(disk, "ata_smart_failed",
                 $"SMART_RCV_DRIVE_DATA 读取属性表失败，Win32 错误 {smartError}（虚拟盘/RAID 卡后常见）");
         }
 
@@ -143,7 +137,7 @@ public static class DiskProbeService
 
         if (!table.TryGetWrittenLba(out byte attrId, out ulong rawLba))
         {
-            return Failure(disk, access, "written_lba_absent",
+            return Failure(disk, "written_lba_absent",
                 "属性表中未找到 246/241/233，该盘不提供累计写入计数") with
             {
                 TemperatureCelsius = temperature,
@@ -168,7 +162,6 @@ public static class DiskProbeService
             Firmware = disk.Firmware,
             BusType = disk.BusType,
             SizeBytes = disk.SizeBytes,
-            AccessLevel = access.ToString().ToLowerInvariant(),
             Source = transport == AtaTransport.PredictFailure ? "ata.predict_failure" : "ata.smart_rcv",
             AttributeRef = $"smart.attr{attrId}",
             RawValue = (long)Math.Min(rawLba, long.MaxValue),
@@ -185,7 +178,7 @@ public static class DiskProbeService
         };
     }
 
-    private static DiskProbeResult Failure(PhysicalDiskInfo disk, DeviceAccess access, string source, string note) => new()
+    private static DiskProbeResult Failure(PhysicalDiskInfo disk, string source, string note) => new()
     {
         DriveNumber = disk.DriveNumber,
         Model = disk.Model,
@@ -193,7 +186,6 @@ public static class DiskProbeService
         Firmware = disk.Firmware,
         BusType = disk.BusType,
         SizeBytes = disk.SizeBytes,
-        AccessLevel = access.ToString().ToLowerInvariant(),
         Source = source,
         Quality = "missing",
         Note = note

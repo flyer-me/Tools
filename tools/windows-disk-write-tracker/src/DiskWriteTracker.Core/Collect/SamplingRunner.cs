@@ -77,6 +77,11 @@ public static class SamplingRunner
 
         int pruned = PruneOldSamples(resolution.Directory, config.RetentionDays);
 
+        // 日志剪枝必须独立于 logLevel 执行：ERROR 模式下 EngineLog.Info 根本不会被调用，
+        // 把清理挂在日志写入路径上，等于在最需要清理的配置下永不触发。
+        int logsPruned = LogRetention.PruneExpired(
+            resolution.Directory, config.LogRetentionDays, DateOnly.FromDateTime(DateTime.Now));
+
         string? file = records.Count > 0 && DateOnly.TryParseExact(localDate, "yyyy-MM-dd", out DateOnly date)
             ? store.FilePathFor(date)
             : null;
@@ -87,9 +92,9 @@ public static class SamplingRunner
         {
             EngineLog.Info(resolution.Directory, string.Format(
                 CultureInfo.InvariantCulture,
-                "sample run={0} disks={1} dir={2} portable={3} fallback={4} pruned={5} elapsed={6}ms",
+                "sample run={0} disks={1} dir={2} portable={3} fallback={4} pruned={5} logsPruned={6} elapsed={7}ms",
                 runId, records.Count, resolution.Directory, resolution.IsPortable,
-                resolution.IsFallback, pruned, watch.ElapsedMilliseconds));
+                resolution.IsFallback, pruned, logsPruned, watch.ElapsedMilliseconds));
         }
 
         return new SamplingOutcome(
@@ -100,13 +105,13 @@ public static class SamplingRunner
     /// <summary>按文件名里的日期删除超期样本。只删文件，不递归删目录。</summary>
     private static int PruneOldSamples(string directory, int retentionDays)
     {
-        if (retentionDays <= 0 || !Directory.Exists(directory))
+        if (retentionDays <= 0)
             return 0;
 
         var cutoff = DateOnly.FromDateTime(DateTime.Now).AddDays(-retentionDays);
         int removed = 0;
 
-        foreach (SampleFile file in SampleFile.Enumerate(directory))
+        foreach (var file in SampleFile.Enumerate(directory))
         {
             if (file.Date >= cutoff)
                 continue;

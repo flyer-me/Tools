@@ -1,57 +1,23 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>DiskWriteTracker.Cli</RootNamespace>
     <AssemblyName>DiskWriteTracker</AssemblyName>
-  </PropertyGroup>
-
-  <!--
-    分发形态只在 Release 下定义。目标是让裸 `dotnet publish -c Release`
-    就能产出 manifest 声明的 src/dist/DiskWriteTracker.exe，
-    不需要调用方再传一串 -p: 参数。CI 与本地因此走同一条命令，参数不会漂移。
-  -->
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <PublishReadyToRun>true</PublishReadyToRun>
-    <DebugType>none</DebugType>
-    <DebugSymbols>false</DebugSymbols>
+    <!-- 交付形态：自包含多文件（依赖旁置 dll），用户无需安装运行时 -->
+    <PublishSingleFile>false</PublishSingleFile>
+    <!-- 裁剪未用 BCL。Core 零 NuGet 依赖，仅有 WScript.Shell 运行时 COM 晚绑定
+         （不受 IL 裁剪影响）；STJ 载荷已改用源生成上下文静态引用 -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <!-- 反射式 STJ 开关。CLI 与报表载荷已改用源生成上下文静态引用 -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- 只携带英文与简体中文资源 -->
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\DiskWriteTracker.Core\DiskWriteTracker.Core.csproj" />
   </ItemGroup>
-
-  <!--
-    把 publish 输出整理成最终分发形态：exe + README.txt + data\。
-    data 目录必须存在且可以为空 —— 引擎靠「exe 同级存在 data\」判定便携模式
-    （Config/RuntimePaths.cs），打包时漏掉空目录会让分发包静默退回 ProgramData。
-    README.txt 来自 assets\，它是给最终用户的说明，不参与编译。
-  -->
-  <Target Name="StageDist" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
-    <PropertyGroup>
-      <_DistDir>$(MSBuildProjectDirectory)\..\dist\</_DistDir>
-      <_PublishRoot Condition="'$(PublishDir)' != ''">$(PublishDir)</_PublishRoot>
-      <_PublishRoot Condition="'$(PublishDir)' == ''">$(OutputPath)publish\</_PublishRoot>
-    </PropertyGroup>
-
-    <MakeDir Directories="$(_DistDir)" />
-    <MakeDir Directories="$(_DistDir)data" />
-
-    <Error Condition="!Exists('$(_PublishRoot)$(AssemblyName).exe')"
-           Text="publish 未产出 $(_PublishRoot)$(AssemblyName).exe" />
-    <!-- README.txt 是分发包的一部分，缺了要显式失败，不能靠 Condition 静默跳过 -->
-    <Error Condition="!Exists('$(MSBuildProjectDirectory)\..\..\assets\README.txt')"
-           Text="缺少 assets\README.txt：它是分发包的一部分" />
-
-    <Copy SourceFiles="$(_PublishRoot)$(AssemblyName).exe" DestinationFolder="$(_DistDir)" />
-    <!-- 项目在 src\ 下，assets\ 在工具根，所以要上跳两级 -->
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\assets\README.txt"
-          DestinationFiles="$(_DistDir)README.txt" />
-  </Target>
 
 </Project>

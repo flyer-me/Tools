@@ -67,7 +67,7 @@ public static class RuntimePaths
 
     /// <summary>
     /// 首次切到便携目录时，把 ProgramData 里的历史样本复制一份过来。
-    /// 只复制不删除，失败不阻断采样，重复执行是幂等的。
+    /// 复制源文件并保留，重复执行幂等。
     /// </summary>
     private static string? MigrateLegacy(string target)
     {
@@ -108,7 +108,6 @@ public static class RuntimePaths
                 marker,
                 $"from={legacy}{Environment.NewLine}files={copied}{Environment.NewLine}at={DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}{Environment.NewLine}");
 
-            // 一次性标记，用户没必要看见
             Store.FileLock.EnsureHidden(marker);
 
             return copied > 0
@@ -117,7 +116,7 @@ public static class RuntimePaths
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // 迁移失败不影响采样，历史数据仍留在原目录
+            // 迁移失败时源文件保留在原目录
             return null;
         }
     }

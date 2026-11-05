@@ -3,7 +3,7 @@ using System.Text;
 namespace DiskWriteTracker.Core.Store;
 
 /// <summary>
-/// M1 零依赖存储：按日追加 JSONL。M2 迁移到 SQLite 后，JSONL 保留为审计副本。
+/// 零依赖存储：按日追加 JSONL。
 /// 单文件按本地日期切分，便于人工排查与按日清理。
 /// </summary>
 public sealed class JsonlSampleStore
@@ -33,7 +33,7 @@ public sealed class JsonlSampleStore
             return 0;
 
         // 跨进程写锁：计划任务与手动采样可能同时启动，无锁追加会写出交错行。
-        // 持锁后一次性写完整块，中途不检查取消，保证不会留下半行。
+        // 持锁后一次性写完整块，中途不检查取消。
         using var writeLock = FileLock.Acquire(
             Path.Combine(_directory, ".write.lock"), FileLock.DefaultTimeout);
 
@@ -92,7 +92,7 @@ public sealed class JsonlSampleStore
     public IReadOnlyList<SampleRecord> ReadAll()
     {
         var result = new List<SampleRecord>();
-        foreach (SampleFile file in SampleFile.Enumerate(_directory))
+        foreach (var file in SampleFile.Enumerate(_directory))
             ReadInto(file.Path, result);
 
         SortByCapturedUtc(result);
@@ -100,55 +100,66 @@ public sealed class JsonlSampleStore
     }
 
     /// <summary>
-    /// 只读窗口内的文件，外加窗口之前的前驱样本。
+    /// 只读窗口内的文件，外加每块盘在窗口起点之前最近的一条有用样本（前驱）。
     ///
-    /// 前驱不能简单取"前一天"：窗口前一天该盘可能读取失败（bytes=null），真实前驱在更早。
-    /// 少读一条，DailyAggregator 就会把窗口首日当成 baseline，一整天的写入量静默变成 0。
-    /// 所以规则是：继续回读更早的文件，直到窗口里出现的每块盘都拿到至少一条有效窗口前样本。
+    /// 为什么必须有前驱：日增量 = 当天最后一条 − 前一天最后一条。窗口第一天如果只读到窗口内的样本，
+    /// 它就退化成"基线日"，那一天的写入量凭空消失。多读一天是错的做法 —— 第 1 天要看的是
+    /// "严格早于窗口起点的最后一条"，不是"窗口起点前一天的最后一条"：中间缺了三天时，
+    /// 多了那三天，前一天根本没有记录。
     ///
-    /// 代价上限是 ReadAll：某块盘若从无有效读数，会一直回读到最早的文件，
-    /// 也就是退化成改造前的全量读取，不可能更慢。
-    ///
-    /// 返回结果**包含**回读进来的前驱行，调用方按日期过滤即可（日统计与报表本来就按窗口过滤）。
+    /// 往回最多扫 <see cref="MaxPredecessorScanDays"/> 天。一块盘常年不在线时，
+    /// 再多扫也只是把开文件数刷上去，拿不到东西；超过就放弃，返回的仍是窗口内那部分。
     /// </summary>
+    /// <param name="days">窗口天数。&lt;= 0 表示全量。</param>
+    /// <param name="today">"今天"的日期，由调用方注入以便测试。</param>
     public IReadOnlyList<SampleRecord> ReadForWindow(int days, DateOnly today)
     {
         if (days <= 0)
             return ReadAll();
 
-        var result = new List<SampleRecord>();
-        List<SampleFile> files = SampleFile.Enumerate(_directory);
+        var files = SampleFile.Enumerate(_directory);
         if (files.Count == 0)
-            return result;
+            return [];
 
-        DateOnly from = today.AddDays(-(days - 1));
+        DateOnly start = today.AddDays(-days + 1);
+        var result = new List<SampleRecord>();
 
-        int start = 0;
-        while (start < files.Count && files[start].Date < from)
-            start++;
-
-        // 窗口完全落在最新样本之后（改过系统时间，或只查最近一天而样本更早）：窗口内没有数据
-        if (start >= files.Count)
-            return result;
-
-        for (int i = start; i < files.Count; i++)
-            ReadInto(files[i].Path, result);
-
-        var disks = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var record in result)
-            disks.Add(record.DiskKey);
-
-        // 窗口内所有文件都晚于 from，因此前驱只能来自更早的文件；逐文件回读、边读边记已覆盖的盘。
-        var covered = new HashSet<string>(StringComparer.Ordinal);
-        for (int i = start - 1; i >= 0 && covered.Count < disks.Count; i--)
+        foreach (var file in files)
         {
-            int before = result.Count;
-            ReadInto(files[i].Path, result);
+            if (file.Date >= start)
+                ReadInto(file.Path, result);
+        }
 
-            for (int j = before; j < result.Count; j++)
+        if (result.Count == 0)
+        {
+            // 窗口内一条都没有，说明链路本身断了 —— 这时补前驱只会让人以为"有数据"
+            return result;
+        }
+
+        var need = result
+            .Where(r => r.Bytes.HasValue)
+            .Select(r => r.DiskKey)
+            .ToHashSet(StringComparer.Ordinal);
+
+        int scanned = 0;
+        foreach (var file in files.Where(f => f.Date < start).OrderByDescending(f => f.Date))
+        {
+            if (need.Count == 0 || scanned >= MaxPredecessorScanDays)
+                break;
+
+            scanned++;
+
+            var probe = new List<SampleRecord>();
+            ReadInto(file.Path, probe);
+
+            // 每块盘只要这个文件里最后一条有值的：往前扫时第一个碰到有值的日子就是最近的前驱
+            foreach (var group in probe
+                         .Where(r => r.Bytes.HasValue && need.Contains(r.DiskKey))
+                         .GroupBy(r => r.DiskKey, StringComparer.Ordinal))
             {
-                if (result[j].Bytes.HasValue)
-                    covered.Add(result[j].DiskKey);
+                SampleRecord last = group.OrderByDescending(r => r.CapturedUtc, StringComparer.Ordinal).First();
+                result.Add(last);
+                need.Remove(last.DiskKey);
             }
         }
 
@@ -156,16 +167,20 @@ public sealed class JsonlSampleStore
         return result;
     }
 
-    /// <summary>只数非空行，不解析 JSON。doctor 与菜单只要一个数量。</summary>
+    /// <summary>只数非空行，不解析 JSON。doctor 与菜单统计要的是"有多少条"，不是"内容是什么"。</summary>
     public int CountLines()
     {
         int count = 0;
-
-        foreach (SampleFile file in SampleFile.Enumerate(_directory))
+        foreach (var file in SampleFile.Enumerate(_directory))
         {
             try
             {
-                foreach (string line in File.ReadLines(file.Path))
+                using var stream = new FileStream(file.Path, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(stream, new UTF8Encoding(false),
+                    detectEncodingFromByteOrderMarks: true);
+
+                while (reader.ReadLine() is { } line)
                 {
                     if (!string.IsNullOrWhiteSpace(line))
                         count++;
@@ -173,14 +188,17 @@ public sealed class JsonlSampleStore
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // 单个文件被占用就跳过：少几条不影响诊断，不值得让 doctor 失败
+                // 读不到就跳过，统计数字少一点比抛异常好
             }
         }
 
         return count;
     }
 
-    private static void ReadInto(string path, List<SampleRecord> into)
+    /// <summary>往回补前驱最多扫这么多天。</summary>
+    public const int MaxPredecessorScanDays = 90;
+
+    private static void ReadInto(string path, List<SampleRecord> target)
     {
         // 必须用共享模式打开：写者持 FileShare.Read 追加时，默认的独占读会让两边互锁
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
@@ -195,12 +213,12 @@ public sealed class JsonlSampleStore
 
             var record = TryParse(line);
             if (record is not null)
-                into.Add(record);
+                target.Add(record);
         }
     }
 
     private static void SortByCapturedUtc(List<SampleRecord> records)
-        => records.Sort(static (a, b) => string.CompareOrdinal(a.CapturedUtc, b.CapturedUtc));
+        => records.Sort((a, b) => string.CompareOrdinal(a.CapturedUtc, b.CapturedUtc));
 
     private static SampleRecord? TryParse(string line)
     {

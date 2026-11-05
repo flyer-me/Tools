@@ -5,12 +5,19 @@ using DiskWriteTracker.Cli.Reports;
 namespace DiskWriteTracker.Cli.Interactive;
 
 /// <summary>
-/// 用户偏好的读写。落在数据目录下的 settings.json，用户可以用记事本直接改。
-/// 老版本把它放在 exe 同目录的 config\launcher.json，首次加载时会搬过来并删掉旧文件。
+/// 用户偏好的读写。落在数据目录的 config\settings.json，用户可以用记事本直接改。
+///
+/// 为什么不在 data 根：data 根是"数据"的地盘（samples-*.jsonl、logs\、exports\），
+/// 而 settings.json 是"配置"。混在一层，任何一个清理动作都无法用"删数据、留配置"这一条规则表达，
+/// 只能给单个文件名开特例 —— 特例是漏删和误删的共同来源。
+///
+/// 迁移链：exe\config\launcher.json（最早） → data\settings.json（schemaVersion 1） → data\config\settings.json（2）。
+/// 每一步都是"解析成功才落新址、落址成功才删旧文件"，解析失败一律原样留着当证据。
 /// </summary>
 internal static class UserSettingsStore
 {
     private const string FileName = "settings.json";
+    private const string ConfigDirName = "config";
 
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
@@ -18,16 +25,23 @@ internal static class UserSettingsStore
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    public static string PathFor(string dataDirectory) => Path.Combine(dataDirectory, FileName);
+    public static string PathFor(string dataDirectory)
+        => Path.Combine(dataDirectory, ConfigDirName, FileName);
+
+    /// <summary>schemaVersion 1 的位置：直接躺在 data 根。</summary>
+    public static string LegacyPathFor(string dataDirectory) => Path.Combine(dataDirectory, FileName);
 
     public static UserSettings Load(string dataDirectory, string? engineDailyTime)
     {
         string path = PathFor(dataDirectory);
 
         if (!File.Exists(path))
-            MigrateLegacy(dataDirectory);
+            MigrateFromDataRoot(dataDirectory);
 
-        var raw = TryReadFile(path);
+        if (!File.Exists(path))
+            MigrateFromExeConfig(dataDirectory);
+
+        var raw = TryReadWithBackup(path);
         var settings = UserSettings.Normalize(raw ?? UserSettings.Defaults, engineDailyTime);
 
         // 第一次运行就把文件写出来，用户才知道有这么个东西可以改。
@@ -42,9 +56,10 @@ internal static class UserSettingsStore
     {
         try
         {
-            Directory.CreateDirectory(dataDirectory);
-
             string path = PathFor(dataDirectory);
+            string? dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
 
             if (File.Exists(path))
             {
@@ -57,8 +72,7 @@ internal static class UserSettingsStore
                 ["schemaVersion"] = settings.SchemaVersion,
                 ["reportDays"] = settings.ReportDays,
                 ["exportDays"] = settings.ExportDays,
-                ["time"] = settings.Time,
-                ["logDays"] = settings.LogDays
+                ["time"] = settings.Time
             };
 
             ReportWriter.WriteAtomic(path, payload.ToJsonString(WriteOptions));
@@ -71,10 +85,46 @@ internal static class UserSettingsStore
     }
 
     /// <summary>
-    /// 把老版本的 config\launcher.json 搬到 settings.json。成功才删原文件；
-    /// 解析失败一律不动，避免吃掉用户手改过的内容。
+    /// schemaVersion 1 → 2：把 data\settings.json 搬到 data\config\settings.json。
+    /// 解析成功才搬，搬完读回来确认再删旧文件；顺序反了会在磁盘满或权限异常时丢掉用户偏好。
     /// </summary>
-    public static bool MigrateLegacy(string dataDirectory)
+    public static bool MigrateFromDataRoot(string dataDirectory)
+    {
+        try
+        {
+            string legacy = LegacyPathFor(dataDirectory);
+            string target = PathFor(dataDirectory);
+
+            if (!File.Exists(legacy) || File.Exists(target))
+                return false;
+
+            var parsed = TryReadFile(legacy);
+            if (parsed is null)
+                return false;
+
+            if (!TrySave(dataDirectory, UserSettings.Normalize(parsed, null)))
+                return false;
+
+            // 读回来确认新文件真的可解析，再删旧文件
+            if (TryReadFile(target) is null)
+                return false;
+
+            try { File.Delete(legacy); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 更早的版本把偏好放在 exe 同目录的 config\launcher.json。搬到数据目录下的 config\settings.json，
+    /// 成功才删原文件与随之变空的 config 目录（只删空目录，绝不递归）。
+    /// </summary>
+    public static bool MigrateFromExeConfig(string dataDirectory)
     {
         try
         {
@@ -91,10 +141,12 @@ internal static class UserSettingsStore
             if (!TrySave(dataDirectory, UserSettings.Normalize(parsed, null)))
                 return false;
 
+            if (TryReadFile(target) is null)
+                return false;
+
             try { File.Delete(legacy); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
 
-            // 只删空目录，绝不递归
             try
             {
                 string? dir = Path.GetDirectoryName(legacy);
@@ -109,6 +161,19 @@ internal static class UserSettingsStore
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// 主文件读不出来就退到 .bak —— 每次保存前都会留一份，它是最后一个"用户真的这么设过"的证据。
+    /// 都没有才回落默认值。
+    /// </summary>
+    private static UserSettings? TryReadWithBackup(string path)
+    {
+        var primary = TryReadFile(path);
+        if (primary is not null)
+            return primary;
+
+        return TryReadFile(path + ".bak");
     }
 
     private static UserSettings? TryReadFile(string path)
@@ -129,8 +194,7 @@ internal static class UserSettingsStore
                 ReadInt(root, "schemaVersion") ?? d.SchemaVersion,
                 ReadInt(root, "reportDays") ?? d.ReportDays,
                 ReadInt(root, "exportDays") ?? d.ExportDays,
-                ReadString(root, "time") ?? d.Time,
-                ReadInt(root, "logDays") ?? d.LogDays);
+                ReadString(root, "time") ?? d.Time);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
