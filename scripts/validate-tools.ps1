@@ -344,5 +344,5 @@ Write-Host "Validated $($index.Count) tools with manifest schema $supportedManif
 Write-Host ""
 Write-Host "Tool index:"
 foreach ($t in $index) {
-    Write-Host ("  {0,-32} risk={1,-9} build={2,-14} runtime={3}" -f $t.toolId, $t.risk, $t.build.kind, $t.runtime.kind)
+    Write-Host ("  {0,-34} risk={1,-9} build={2,-14} runtime={3}" -f $t.toolId, $t.risk, $t.build.kind, $t.runtime.kind)
 }
