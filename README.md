@@ -27,7 +27,7 @@ running one.
 - A tool is a directory directly under `tools/`. The directory name **is** the
   `toolId`, and `toolId` must be kebab-case. Both rules are enforced by the
   validator, not by this document.
-- Every tool must include a `tool.manifest.json` following schema `2.1`.
+- Every tool must include a `tool.manifest.json` following schema `2.2`.
 - Release tags use: `tool/<tool-id>/vX.Y.Z`. One tag releases exactly one tool.
 - `dist/` directories are build output and are gitignored, with one exception:
   hand-maintained launcher scripts under `dist/` stay in Git.

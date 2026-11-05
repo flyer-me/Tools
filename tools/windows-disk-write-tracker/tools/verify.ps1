@@ -280,13 +280,21 @@ if ($jsonMatch.Success) {
 Write-Host ''
 Write-Host '=== 4. 报表固定名与归档 ===' -ForegroundColor Cyan
 
-$defaultReport = Join-Path $Dist 'data\exports\report.html'
-$first = Invoke-Exe @('report', '--days', $fixtureDays)
+# 原版此节不带 --data-dir，report 落在 dist\data（本机真实数据）上：
+# 本机恰好有采样才绿，干净 CI 机器必然红。改为把夹具复制进临时数据目录再跑，
+# 固定名与归档语义不变（都相对数据目录），只是不再依赖机器状态。
+# 便携目录本身的解析由第 7 节 doctor 单独覆盖。
+$reportData = Join-Path $work 'report-default'
+New-Item -ItemType Directory -Path $reportData -Force | Out-Null
+Copy-Item -Path (Join-Path $fixtures '*') -Destination $reportData -Force
+
+$defaultReport = Join-Path $reportData 'exports\report.html'
+$first = Invoke-Exe @('report', '--days', $fixtureDays, '--data-dir', $reportData)
 Assert-That '未指定 --out 时写固定名' (Test-Path $defaultReport)
-$archiveDir = Join-Path $Dist 'data\exports\archive'
+$archiveDir = Join-Path $reportData 'exports\archive'
 $todayArchive = Join-Path $archiveDir ('report-{0}.html' -f (Get-Date -Format 'yyyyMMdd'))
 Assert-That '生成当日归档' (Test-Path $todayArchive) ($todayArchive)
-for ($k = 0; $k -lt 2; $k++) { [void](Invoke-Exe @('report', '--days', $fixtureDays)) }
+for ($k = 0; $k -lt 2; $k++) { [void](Invoke-Exe @('report', '--days', $fixtureDays, '--data-dir', $reportData)) }
 $sameDay = @(Get-ChildItem -LiteralPath $archiveDir -Filter ('report-{0}.html' -f (Get-Date -Format 'yyyyMMdd')) -ErrorAction SilentlyContinue).Count
 Assert-That '同日多次生成只覆盖一份归档' ($sameDay -eq 1) ("count=$sameDay")
 

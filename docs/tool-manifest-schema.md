@@ -1,6 +1,6 @@
 ﻿# Tool Manifest Schema
 
-Current schema version: `2.1`
+Current schema version: `2.2`
 
 ## Layout
 
@@ -46,6 +46,16 @@ Optional fields:
   A `.bat` / `.cmd` driver is invoked with `--no-pause` so an interactive build
   script can still be run by CI; a driver that ignores the argument is fine.
 - `build.outputDir`: artifact root, relative to the tool directory. Default `src/dist`.
+- `build.verify`: acceptance script run by `scripts/build-tool.ps1` **after a
+  successful build** (also for `manual` tools, which have no build step).
+  This is the uniform-test-control seam: the governance layer decides *when*
+  tests run (after build, before packaging/release, same entry locally and in CI),
+  each tool decides *what* its assertions are. Rules: a relative path to a `.ps1`
+  inside the tool directory; it must exist (validated statically like
+  `build.script`); and it must be **safe to run on a clean CI machine** —
+  read-only or offline. Destructive checks belong to manual acceptance, not here.
+  A non-zero exit code fails the build. Optional; a tool without `verify` has no
+  post-build gate.
 
 `build.kind: manual` means there is no build step; the runtime entry must already
 exist in the repository.
@@ -116,6 +126,8 @@ it. They are separate on purpose — a free tool can still rewrite `bcdedit` set
 
 ## Version history
 
+- `2.2`: added optional `build.verify` (uniform test control: tool-specific
+  acceptance script, run by the shared build dispatcher after a successful build).
 - `2.1`: `runtime.entry` is a path contract, existence is asserted after the build;
   added `build.script`, `build.outputDir` and `risk`; `toolId` must equal the
   directory name and be kebab-case; a tool must sit exactly at `tools/<tool-id>/`.

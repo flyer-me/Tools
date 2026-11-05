@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $toolsRoot = Join-Path $repoRoot "tools"
 
-$supportedManifestVersion = "2.1"
+$supportedManifestVersion = "2.2"
 $supportedRuntimeKinds = @("script", "exe", "container", "library")
 $supportedBuildKinds = @("dotnet-msbuild", "powershell", "batch", "node", "python", "go", "rust", "manual")
 $supportedScriptExtensions = @(".ps1", ".bat", ".cmd")
@@ -200,6 +200,28 @@ foreach ($toolDirInfo in $toolDirs) {
     }
     elseif ($buildKind -notin @("dotnet-msbuild", "manual")) {
         $errors.Add("$($manifestPath): build.kind '$buildKind' requires build.script")
+    }
+
+    # build.verify 是构建后的验收断言（统一测试控制的接缝）：治理层决定"何时跑"
+    # （构建成功后、发布前，本地与 CI 同一入口），工具自己决定"断言是什么"。
+    # 可选；一旦声明就必须是工具目录内、真实存在的 .ps1。
+    if ($tool.build.PSObject.Properties.Name -contains "verify" -and -not [string]::IsNullOrWhiteSpace([string]$tool.build.verify)) {
+        $verifyRel = [string]$tool.build.verify
+        if ([System.IO.Path]::IsPathRooted($verifyRel)) {
+            $errors.Add("$($manifestPath): build.verify must be a relative path, got '$verifyRel'")
+        }
+        else {
+            $verifyPath = [System.IO.Path]::GetFullPath((Join-Path $toolDir $verifyRel))
+            if (-not $verifyPath.StartsWith($toolDirFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $errors.Add("$($manifestPath): build.verify escapes the tool directory '$verifyRel'")
+            }
+            elseif (-not (Test-Path -LiteralPath $verifyPath -PathType Leaf)) {
+                $errors.Add("$($manifestPath): build.verify not found '$verifyRel'")
+            }
+            elseif ([System.IO.Path]::GetExtension($verifyPath).ToLowerInvariant() -ne ".ps1") {
+                $errors.Add("$($manifestPath): build.verify must be a .ps1 script, got '$verifyRel'")
+            }
+        }
     }
 
     if ($runtimeKind -eq "script") {

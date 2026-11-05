@@ -94,6 +94,8 @@
 
 ### 任务 2.1 统一测试控制：可选 `build.verify` 字段（核心，D2）
 
+> **状态：✅ 已完成（2026-11-05 14:52）**。schema 升 2.2；`validate-tools.ps1` 对 `build.verify` 复用 build.script 校验；`build-tool.ps1` 构建后执行验收（manual 工具同样生效）；8 个 manifest 全部升 2.2，DWT 声明 `tools/verify.ps1`。**适配记录**：verify.ps1 第 4 节原本不带 `--data-dir` 落在真实 `dist\data` 上（本机有数据才绿，干净 CI 必红）——已按 D2 授权改为夹具复制进临时目录，114/114 全绿；端到端验证：`build-tool.ps1 -ToolId windows-disk-write-tracker` → 构建 → verify 114 项 → `Built 1 tool(s)` exit 0；`assert-artifacts` 通过。
+
 **动机**：当前发布链路只证明"产物存在"，不证明"产物能用"。DWT 的 `tools/verify.ps1`（fixture 行为验收，27 KB）是现成的工具特定测试代码，却从不被任何流水线执行。D2 的模型即：治理层决定"何时跑测试"（构建后、发布前、本地与 CI 同一入口），工具自己决定"测试是什么"。
 
 **动作**：

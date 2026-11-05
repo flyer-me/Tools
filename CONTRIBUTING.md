@@ -11,7 +11,7 @@
   the validator rejects nested manifests.
 - The directory name is the `toolId`. It must be kebab-case and must match the
   `toolId` field inside `tool.manifest.json`.
-- Every tool must include `tool.manifest.json` and follow schema `2.1`.
+- Every tool must include `tool.manifest.json` and follow schema `2.2`.
 - Declare `risk`: `low` if the tool reads state or writes inside its own directory,
   `elevated` if it needs admin, writes `HKLM`, changes boot configuration, or replaces
   system binaries. `elevated` tools need a `## Risk Notice` section in their README.

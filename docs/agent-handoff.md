@@ -30,7 +30,7 @@ Use this checklist when handing work to another agent.
 ## Independent New-Tool Flow
 
 1. Create `tools/<tool-id>/` (kebab-case, matches the `toolId` you are about to declare).
-2. Add `tool.manifest.json` with schema `2.1`.
+2. Add `tool.manifest.json` with schema `2.2`.
 3. Fill `build/runtime/artifacts` and `risk` completely.
 4. Add tool `README.md` with run instructions and a `## Risk Notice` section.
 5. Run `pwsh -File .\scripts\validate-tools.ps1`.

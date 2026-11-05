@@ -1,5 +1,5 @@
 ﻿{
-  "manifestVersion": "2.1",
+  "manifestVersion": "2.2",
   "toolId": "windows-disk-write-tracker",
   "displayName": "Disk Write Tracker",
   "licenseTier": "free",
@@ -12,7 +12,8 @@
       "-r", "win-x64",
       "--self-contained", "true",
       "-o", "dist"
-    ]
+    ],
+    "verify": "tools/verify.ps1"
   },
   "runtime": {
     "kind": "exe",
