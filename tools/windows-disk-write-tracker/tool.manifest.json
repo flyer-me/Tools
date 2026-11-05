@@ -9,8 +9,6 @@
     "project": "src/DiskWriteTracker.Cli/DiskWriteTracker.Cli.csproj",
     "configuration": "Release",
     "args": [
-      "-r", "win-x64",
-      "--self-contained", "true",
       "-o", "dist"
     ],
     "verify": "tools/verify.ps1"

@@ -22,6 +22,7 @@ All notable changes to this repository will be documented in this file.
 - Added `windows-remove-org-restrictions` to the index; it existed on disk but was never documented.
 
 ### Changed
+- Publish-property ownership for `windows-disk-write-tracker`: `RuntimeIdentifier` and `SelfContained` now live in the project file (completing the migration the changelog announced earlier); the manifest `build.args` keeps only `-o dist`, which is the artifact-location contract the `artifacts` patterns reference. Output verified identical (48 files, same entry-shell size) with the full 114-assertion gate green.
 - Removed the hand-maintained tool index from the root README. The tool list is now generated only by `validate-tools.ps1` (console overview plus `out/tool-index.json`); no document keeps a manual tool list.
 - `windows-disk-write-tracker` `tools/verify.ps1` section 4 no longer runs `report` against the real `dist\data`: it copies the fixtures into a temp data directory first. Same assertions, but hermetic — a clean CI machine no longer fails for lacking user data.
 - Tool layout is now strictly flat: `tools/<tool-id>/tool.manifest.json`, exactly one level. The validator rejects nested manifests, requires `toolId` to equal the directory name, and requires kebab-case.

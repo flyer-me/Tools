@@ -163,6 +163,8 @@
 
 ### 任务 2.5 发布属性属地划分
 
+> **状态：✅ 已完成（2026-11-05 15:34）**。`RuntimeIdentifier`（win-x64）与 `SelfContained`（true）固化进 `DiskWriteTracker.Cli.csproj`，补齐 CHANGELOG 早已宣布的迁移；manifest `build.args` 仅保留 `-o dist`（输出位置是产物契约——artifacts pattern 引用 dist/，属地归 manifest）。属地规则已写入 csproj 注释。**验收**：裸 `dotnet publish -c Release` 经根分派器产出与迁移前逐项一致（48 文件、入口壳同尺寸），verify 114 项 + assert-artifacts 全绿。内部 `tools/build.ps1` 的命令行传参成为冗余但同值的覆盖，无冲突（与既有 `Publish*` 属性双写模式一致）。
+
 **动机**：RID / self-contained / 输出目录应只有一处权威定义。CHANGELOG 已宣布方向："发布属性固化进项目文件，裸 `dotnet publish` 即产出交付物"。
 
 **动作**：确认 DWT 的 `DiskWriteTracker.Cli.csproj` 已含 `RuntimeIdentifier` / `SelfContained` / 输出路径属性（缺则先补项目文件），然后从 manifest `build.args` 移除 `-r win-x64 --self-contained true -o dist`，只保留项目文件覆盖不了的参数。

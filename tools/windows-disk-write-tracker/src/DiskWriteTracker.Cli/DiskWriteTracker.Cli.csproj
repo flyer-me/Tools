@@ -4,6 +4,11 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>DiskWriteTracker.Cli</RootNamespace>
     <AssemblyName>DiskWriteTracker</AssemblyName>
+    <!-- 发布属性属地划分：RID 与自包含是"怎么构建"，固化在项目文件里，
+         裸 dotnet publish 即产出交付物；输出目录 -o dist 是"产物落在哪"，
+         属于 manifest 的产物契约（artifacts pattern 引用 dist/）。 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
     <!-- 交付形态：自包含多文件（依赖旁置 dll），用户无需安装运行时 -->
     <PublishSingleFile>false</PublishSingleFile>
     <!-- 裁剪未用 BCL。Core 零 NuGet 依赖，仅有 WScript.Shell 运行时 COM 晚绑定
