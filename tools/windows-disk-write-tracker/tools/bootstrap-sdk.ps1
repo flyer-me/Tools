@@ -3,12 +3,10 @@
     免提权引导安装 .NET 10 SDK 到用户目录。
 
 .DESCRIPTION
-    先用机器上已有的 dotnet；只有它解析不出 global.json 时才装。
+    优先用机器上已有的 dotnet；解析不出 global.json 时才装。
     安装走官方 dotnet-install.ps1，落到 %LOCALAPPDATA%\Microsoft\dotnet。
-
-    为什么不无条件装：muxer 只在自己根目录下查 SDK，两个安装的 SDK 清单互不可见。
-    系统已经有可用 SDK 时再往用户目录塞一份，只会多出一个永远选不中的副本
-    （PATH 上 Program Files 在前，且 build.ps1 优先用系统那份），白占几百 MB。
+    muxer 只在自己根目录下查 SDK，两份安装的 SDK 清单互不可见；
+    系统有可用 SDK 时再装一份，PATH 上 Program Files 优先，新副本永远选不中。
 
 .PARAMETER Channel
     SDK 通道，默认 10.0。

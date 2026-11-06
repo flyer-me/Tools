@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="DiskWriteTracker.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Scheduling\schedule.ps1" />
     <EmbeddedResource Include="Export\Report\report.css" LogicalName="report.css" />
     <EmbeddedResource Include="Export\Report\report.js" LogicalName="report.js" />

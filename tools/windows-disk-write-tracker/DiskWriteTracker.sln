@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DiskWriteTracker.Core", "sr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DiskWriteTracker.Cli", "src\DiskWriteTracker.Cli\DiskWriteTracker.Cli.csproj", "{08CEA876-FEA5-45F9-BACF-2314F200BDC2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DiskWriteTracker.Core.Tests", "src\DiskWriteTracker.Core.Tests\DiskWriteTracker.Core.Tests.csproj", "{B7E4A1C2-5D3F-4C81-9A2E-6F0B7D3E1C45}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +28,14 @@ Global
 		{08CEA876-FEA5-45F9-BACF-2314F200BDC2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{08CEA876-FEA5-45F9-BACF-2314F200BDC2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{08CEA876-FEA5-45F9-BACF-2314F200BDC2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B7E4A1C2-5D3F-4C81-9A2E-6F0B7D3E1C45}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B7E4A1C2-5D3F-4C81-9A2E-6F0B7D3E1C45}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B7E4A1C2-5D3F-4C81-9A2E-6F0B7D3E1C45}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B7E4A1C2-5D3F-4C81-9A2E-6F0B7D3E1C45}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{0A938386-7AB0-470F-B2AC-FC4E7A8B8CD1} = {3EC909D2-99DD-46CF-B79A-A8C2CF893FA9}
 		{08CEA876-FEA5-45F9-BACF-2314F200BDC2} = {3EC909D2-99DD-46CF-B79A-A8C2CF893FA9}
+		{B7E4A1C2-5D3F-4C81-9A2E-6F0B7D3E1C45} = {3EC909D2-99DD-46CF-B79A-A8C2CF893FA9}
 	EndGlobalSection
 EndGlobal

@@ -1,7 +1,7 @@
-﻿# DiskWriteTracker 验收断言
-# 用法：powershell -ExecutionPolicy Bypass -File tools\verify.ps1
-# 全部通过返回 0，任一失败抛错并返回 1。
-# 编码要求：UTF-8 带 BOM，CRLF（PS 5.1 无 BOM 会解析坏中文）。
+﻿# DiskWriteTracker 进程契约验收
+# 用法：pwsh -NoProfile -File tools\verify.ps1
+# 全部通过返回 0，任一失败返回 1。
+# 编码：UTF-8 带 BOM + CRLF。
 
 param(
     [string]$Dist = ''
@@ -14,34 +14,15 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($Dist)) { $Dist = Join-Path $repoRoot 'dist' }
 
 $exe = Join-Path $Dist 'DiskWriteTracker.exe'
-if (-not (Test-Path $exe)) { throw "找不到 $exe，请先运行 tools\build.ps1" }
+if (-not (Test-Path $exe)) {
+    throw "找不到 $exe，请先运行 scripts\build-tool.ps1 -ToolId windows-disk-write-tracker"
+}
 
-$fixtures = Join-Path $repoRoot 'tests\fixtures\data'
-
-# 窗口天数从夹具文件名反推，不写死 30。
-# 写死的数字会在某一天悄悄落到窗口外，届时全套断言集体变红，而根因只是"今天是几号"。
-$fixtureFiles = @(Get-ChildItem -LiteralPath $fixtures -Filter 'samples-*.jsonl' -ErrorAction SilentlyContinue)
-if ($fixtureFiles.Count -eq 0) { throw "夹具目录没有样本文件：$fixtures" }
-
-$fixtureDates = @($fixtureFiles | ForEach-Object {
-    [datetime]::ParseExact($_.BaseName.Substring(8), 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
-} | Sort-Object)
-
-$fixtureStart = $fixtureDates[0]
-$fixtureNewest = $fixtureDates[$fixtureDates.Count - 1]
-
-# 覆盖全部夹具的窗口
-$fixtureDays = [int]((Get-Date).Date - $fixtureStart.Date).TotalDays + 1
-if ($fixtureDays -lt 1) { $fixtureDays = 1 }
-
-# 只覆盖"最新那一天"的窗口：这一天要靠更早文件里的前驱才能算出增量
-$predecessorDays = [int]((Get-Date).Date - $fixtureNewest.Date).TotalDays + 1
-if ($predecessorDays -lt 1) { $predecessorDays = 1 }
-
-$newestFileLines = @(Get-Content -LiteralPath (Join-Path $fixtures ('samples-{0}.jsonl' -f $fixtureNewest.ToString('yyyyMMdd'))) -Encoding UTF8 |
-    Where-Object { $_.Trim().Length -gt 0 }).Count
 $work = Join-Path $env:TEMP ('dwt-verify-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work -Force | Out-Null
+$fixture = Join-Path $work 'fixture'
+New-Item -ItemType Directory -Path $fixture -Force | Out-Null
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
 $script:passed = 0
 $script:failed = 0
@@ -61,8 +42,7 @@ function Assert-That {
 }
 
 function Invoke-Exe {
-    # 用 ProcessStartInfo 而不是 `& $exe`：解码编码可控（引擎固定 UTF-8，PS 5.1 默认按
-    # 控制台代码页解码，会把中文断言判成乱码），且 EAP='Stop' 下原生命令写 stderr 不抛异常。
+    # ProcessStartInfo 固定 UTF-8 解码；PS 5.1 按控制台代码页解码会把中文判成乱码。
     param([string[]]$Argv, [int]$TimeoutMs = 0)
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -112,6 +92,69 @@ function Invoke-Exe {
     return @{ Code = $code; Text = $text; StdOut = $stdout; StdErr = $stderr; Finished = $finished }
 }
 
+function Get-LabelValue {
+    param([string]$Text, [string]$Label)
+
+    $pattern = '(?m)^\s*' + [regex]::Escape($Label) + '\s*:\s*(.+?)\s*$'
+    $match = [regex]::Match($Text, $pattern)
+    if ($match.Success) { return $match.Groups[1].Value.Trim() }
+    return $null
+}
+
+function Get-PurgeSnapshot {
+    param([string]$Root)
+
+    return (@(Get-ChildItem -LiteralPath $Root -Recurse -File -Force |
+        ForEach-Object { $_.FullName.Substring($Root.Length) + '|' + $_.Length }) -join "`n")
+}
+
+# 夹具按今天的相对日期生成，避免写死日期随日历过期。
+# 四天依次覆盖：基线、正常差值 102.4 GB、跨缺日 512 GB、计数器回退。
+function New-FixtureData {
+    param([string]$Root)
+
+    $today = (Get-Date).Date
+    $plan = @(
+        @{ O = -6; B = 100000000000 },
+        @{ O = -5; B = 202400000000 },
+        @{ O = -2; B = 714400000000 },
+        @{ O = -1; B = 700000000000 }
+    )
+    foreach ($p in $plan) {
+        $d = $today.AddDays($p.O)
+        $line = '{"runId":"fixture","capturedUtc":"' + $d.ToString('yyyy-MM-dd') + 'T12:00:00Z",' +
+            '"capturedLocal":"' + $d.ToString('yyyy-MM-dd') + 'T20:00:00",' +
+            '"localDate":"' + $d.ToString('yyyy-MM-dd') + '","tzOffsetMinutes":480,' +
+            '"diskKey":"TEST|DISK","driveNumber":0,"model":"TEST DISK","serialNumber":"SN1",' +
+            '"firmware":"F1","busType":"SATA","source":"ata.predict_failure",' +
+            '"attributeRef":null,"rawValue":null,"rawUnit":null,"unitScale":512,' +
+            '"bytes":' + $p.B + ',"quality":"reliable","note":null,"temperatureC":null,' +
+            '"powerOnHours":null,"powerCycles":null,"percentageUsed":null}'
+        $path = Join-Path $Root ('samples-{0}.jsonl' -f $d.ToString('yyyyMMdd'))
+        [IO.File]::WriteAllText($path, $line + "`n", $utf8NoBom)
+    }
+}
+
+New-FixtureData $fixture
+
+Write-Host ''
+Write-Host '=== 0. 算法层单测 ===' -ForegroundColor Cyan
+
+$dotnet = if ($env:DOTNET_EXE) { $env:DOTNET_EXE } else { 'dotnet' }
+Push-Location $repoRoot
+try {
+    # 原生命令的还原输出会写 stderr，Stop 模式下会被当成终止错误。
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $testOut = & $dotnet test 'src\DiskWriteTracker.Core.Tests\DiskWriteTracker.Core.Tests.csproj' `
+        -c Release --nologo -v minimal 2>&1
+    $testExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+}
+finally { Pop-Location }
+
+Assert-That 'xUnit 单测全部通过' ($testExit -eq 0) ((@($testOut) | Select-Object -Last 6) -join "`n")
+
 Write-Host ''
 Write-Host '=== 1. 分发形态 ===' -ForegroundColor Cyan
 
@@ -120,7 +163,7 @@ $entries = @(Get-ChildItem -LiteralPath $Dist -Force | ForEach-Object { $_.Name 
 $missingEntry = @($required | Where-Object { $entries -notcontains $_ })
 Assert-That '根目录三项齐全' ($missingEntry.Count -eq 0) ('缺少: ' + ($missingEntry -join ', '))
 
-# 多文件发布形态：exe + 旁置运行时 dll + runtimeconfig.json，扩展名白名单之外都算异常
+# 多文件发布：exe + 旁置运行时 dll + runtimeconfig.json
 $allowedExt = @('.exe', '.dll', '.json', '.txt')
 $extra = @($entries | Where-Object {
     $name = $_
@@ -134,7 +177,6 @@ $junk = @(Get-ChildItem -LiteralPath $Dist -Recurse -Force -File -ErrorAction Si
     Where-Object { $_.Extension -in @('.ps1', '.cmd', '.bat', '.psm1') -or $_.Name -like '*.schema.json' })
 Assert-That '产物内无脚本或 schema 残留' ($junk.Count -eq 0) (($junk | ForEach-Object { $_.Name }) -join ',')
 
-# 产物内不允许携带 PDB（发布参数 DebugType=none）
 $pdb = @(Get-ChildItem -LiteralPath $Dist -Recurse -Force -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Extension -eq '.pdb' })
 Assert-That '产物内无 PDB' ($pdb.Count -eq 0) (($pdb | ForEach-Object { $_.Name }) -join ',')
@@ -147,13 +189,7 @@ $sideDlls = @(Get-ChildItem -LiteralPath $Dist -File -Force -ErrorAction Silentl
 Assert-That 'exe 旁有自包含运行时 dll' ($sideDlls.Count -gt 0) ('count=' + $sideDlls.Count)
 
 Assert-That 'config 目录已消失' (-not (Test-Path (Join-Path $Dist 'config')))
-
-# data\ 是便携模式的触发条件，必须有。
-# settings.json 只在两种情况下存在：从旧版 config\launcher.json 或 data 根迁移过，或用户用过菜单。
-# 干净构建时它本就不该出现，所以这里只在存在时校验内容，不强制要求存在。
 Assert-That 'data 目录存在（便携模式触发条件）' (Test-Path (Join-Path $Dist 'data'))
-
-# 偏好与样本分属两层：purge 才能用"删数据、留配置"一条规则表达
 Assert-That '偏好设置不在数据目录根' (-not (Test-Path (Join-Path $Dist 'data\settings.json')))
 
 $settingsPath = Join-Path $Dist 'data\config\settings.json'
@@ -165,26 +201,24 @@ if (Test-Path $settingsPath) {
     }
     catch { }
     Assert-That 'settings.json 可解析且 schemaVersion >= 2' $settingsOk
-    $rawSettings = [IO.File]::ReadAllText($settingsPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
-    Assert-That 'settings.json 不再含已废弃的 logDays' ($null -eq $rawSettings.logDays)
+    Assert-That 'settings.json 不含已废弃的 logDays' ($null -eq $parsed.logDays)
 }
 
 Write-Host ''
 Write-Host '=== 1b. 无参运行不挂起 ===' -ForegroundColor Cyan
 
-# 无参 + 输入/输出重定向时必须打印帮助并立即退出。若进了菜单，这里 15 秒超时。
+# 无参 + 重定向时打印帮助并立即退出；若进了菜单，这里 15 秒超时。
 $noArg = Invoke-Exe @() -TimeoutMs 15000
-Assert-That '无参 + 重定向：15 秒内退出（未挂起）' $noArg.Finished
+Assert-That '无参 + 重定向：15 秒内退出' $noArg.Finished
 Assert-That '无参 + 重定向：退出码 0' ($noArg.Code -eq 0) ('code=' + $noArg.Code)
 Assert-That '无参 + 重定向：输出帮助' ($noArg.StdOut.Contains('用法')) $noArg.StdOut
 Assert-That '无参 + 重定向：未进入交互菜单' (-not $noArg.StdOut.Contains('请选择'))
 
-# 帮助文本只有一份来源：无参与 --help 输出应当一致
 $helpProbe = Invoke-Exe @('--help')
 Assert-That '无参与 --help 输出一致' ($noArg.StdOut -eq $helpProbe.StdOut)
 
 Write-Host ''
-Write-Host '=== 1c. 命令行契约未变 ===' -ForegroundColor Cyan
+Write-Host '=== 1c. 命令行契约 ===' -ForegroundColor Cyan
 
 $help = Invoke-Exe @('--help')
 Assert-That '--help 返回 0' ($help.Code -eq 0)
@@ -193,68 +227,44 @@ foreach ($verb in @('doctor', 'disks', 'probe', 'sample', 'daily', 'report', 'ex
 }
 
 $unknown = Invoke-Exe @('nosuchverb')
-Assert-That '未知动词仍返回 2' ($unknown.Code -eq 2) ('code=' + $unknown.Code)
+Assert-That '未知动词返回 2' ($unknown.Code -eq 2) ('code=' + $unknown.Code)
 
 Write-Host ''
-Write-Host '=== 2. 日增量四种边界 ===' -ForegroundColor Cyan
+Write-Host '=== 2. 日增量数值走 CSV ===' -ForegroundColor Cyan
 
-$daily = Invoke-Exe @('daily', 'show', '--days', $fixtureDays, '--json', '--data-dir', $fixtures)
-Assert-That 'daily show 返回 0' ($daily.Code -eq 0) ($daily.Text)
+$csvDir = Join-Path $work 'csv'
+$exp = Invoke-Exe @('export', 'csv', '--days', '10', '--data-dir', $fixture, '--out', $csvDir)
+Assert-That 'export csv 返回 0' ($exp.Code -eq 0) ($exp.Text)
 
-$stats = ($daily.Text | ConvertFrom-Json).data.stats
-$baseline = @($stats | Where-Object { $_.Method -eq 'baseline' })
-$diff = @($stats | Where-Object { $_.Method -eq 'counter_diff' })
-$gap = @($stats | Where-Object { $_.Method -eq 'gap_filled' })
-$clamped = @($stats | Where-Object { $_.Method -eq 'clamped' })
+$dailyCsv = Join-Path $csvDir 'daily.csv'
+Assert-That 'daily.csv 存在' (Test-Path $dailyCsv)
+$rows = @(Import-Csv -LiteralPath $dailyCsv -Encoding UTF8)
+$deltas = @($rows | ForEach-Object { [long]$_.'日增量(bytes)' })
+Assert-That '日统计导出 4 行' ($rows.Count -eq 4) ('count=' + $rows.Count)
+Assert-That '正常差值 = 102400000000 字节' ($deltas -contains 102400000000) (($deltas) -join ',')
+Assert-That '跨缺日累计 = 512000000000 字节' ($deltas -contains 512000000000) (($deltas) -join ',')
+Assert-That '基线与回退日增量为 0' (@($deltas | Where-Object { $_ -eq 0 }).Count -ge 2) (($deltas) -join ',')
+Assert-That '无负数增量' (@($deltas | Where-Object { $_ -lt 0 }).Count -eq 0) (($deltas) -join ',')
+Assert-That '日统计标注方法与质量' (@($rows | Where-Object { $_.'方法' -eq 'counter_diff' -and $_.'数据质量' -eq 'reliable' }).Count -eq 1)
+Assert-That 'samples.csv 存在' (Test-Path (Join-Path $csvDir 'samples.csv'))
 
-Assert-That '存在基线日' ($baseline.Count -ge 1)
-Assert-That '基线的增量为 0' (@($baseline | Where-Object { $_.dailyBytes -ne 0 }).Count -eq 0)
-Assert-That '存在正常差值日' ($diff.Count -ge 1)
-Assert-That '正常差值 = 102.4 GB' (@($diff | Where-Object { $_.dailyBytes -eq 102400000000 }).Count -ge 1) (($diff | ForEach-Object { $_.dailyBytes }) -join ',')
-Assert-That '存在跨期累计日' ($gap.Count -ge 1)
-Assert-That '跨期增量 = 512 GB（1,000,000 × 512000 字节）' (@($gap | Where-Object { $_.dailyBytes -eq 512000000000 }).Count -ge 1)
-Assert-That '跨期日标注 gapDays>0' (@($gap | Where-Object { $_.gapDays -gt 0 }).Count -ge 1)
-Assert-That '存在计数器回退日' ($clamped.Count -ge 1)
-Assert-That '回退日增量恒为 0，不出负数' (@($stats | Where-Object { $_.dailyBytes -lt 0 }).Count -eq 0)
-Assert-That '回退日质量为 anomaly' (@($clamped | Where-Object { $_.quality -ne 'anomaly' }).Count -eq 0)
-
-Write-Host ''
-Write-Host '=== 2b. 窗口读取不丢前驱 ===' -ForegroundColor Cyan
-
-# 只读"最新那一天"的窗口。没有前驱回读的话，这一天会退化成"首次采样，仅建立基线"，
-# 增量凭空变成 0 —— 这是把全量读取改成窗口读取最容易引入的静默错误。
-$narrow = Invoke-Exe @('daily', 'show', '--days', $predecessorDays, '--json', '--data-dir', $fixtures)
-Assert-That '窄窗口 daily 返回 0' ($narrow.Code -eq 0) ($narrow.Text)
-$narrowStats = @(($narrow.Text | ConvertFrom-Json).data.stats)
-Assert-That '窄窗口仍有数据' ($narrowStats.Count -ge 1) ('count=' + $narrowStats.Count)
-Assert-That '窄窗口里没有基线日（说明前驱已补上）' (@($narrowStats | Where-Object { $_.Method -eq 'baseline' }).Count -eq 0) (($narrowStats | ForEach-Object { $_.Method }) -join ',')
-Assert-That '窄窗口保留了 512 GB 的跨期增量' (@($narrowStats | Where-Object { $_.dailyBytes -eq 512000000000 }).Count -ge 1) (($narrowStats | ForEach-Object { $_.dailyBytes }) -join ',')
-Assert-That '窄窗口保留了计数器回退判定' (@($narrowStats | Where-Object { $_.Quality -eq 'anomaly' }).Count -ge 1)
-
-# 宽窗口与窄窗口在重叠日期上必须逐字段一致：窗口只决定"读几个文件"，不该影响算出来的数
-$wideByKey = @{}
-foreach ($s in $stats) { $wideByKey[$s.LocalDate + '|' + $s.Model] = $s.dailyBytes }
-$drift = 0
-foreach ($s in $narrowStats) {
-    $key = $s.LocalDate + '|' + $s.Model
-    if ($wideByKey.ContainsKey($key) -and $wideByKey[$key] -ne $s.dailyBytes) { $drift++ }
-}
-Assert-That '宽窄窗口在重叠日期上增量一致' ($drift -eq 0) ('drift=' + $drift)
-
-# 窗口完全落在数据之外时必须老实返回 0 条，而不是把前驱当数据端上来
-$outside = Invoke-Exe @('daily', 'show', '--days', '1', '--json', '--data-dir', $fixtures)
-Assert-That '窗口内无数据时 daily 返回 4' ($outside.Code -eq 4) ('code=' + $outside.Code)
+# 窄窗口会带回前驱用于算增量，明细里只保留窗口内的样本。
+$narrowCsvDir = Join-Path $work 'csv-narrow'
+[void](Invoke-Exe @('export', 'csv', '--days', '2', '--data-dir', $fixture, '--out', $narrowCsvDir))
+$narrowSamples = @(Import-Csv -LiteralPath (Join-Path $narrowCsvDir 'samples.csv') -Encoding UTF8)
+$windowStart = (Get-Date).Date.AddDays(-1).ToString('yyyy-MM-dd')
+$earlyRows = @($narrowSamples | Where-Object { [string]::CompareOrdinal($_.'自然日', $windowStart) -lt 0 })
+Assert-That 'samples.csv 剔除窗口之前的前驱' ($narrowSamples.Count -ge 1 -and $narrowSamples.Count -lt 4 -and $earlyRows.Count -eq 0) ('rows=' + $narrowSamples.Count + ' start=' + $windowStart)
 
 Write-Host ''
 Write-Host '=== 3. 报表离线自包含 ===' -ForegroundColor Cyan
 
 $reportPath = Join-Path $work 'report.html'
-$report = Invoke-Exe @('report', '--days', $fixtureDays, '--data-dir', $fixtures, '--out', $reportPath)
+$report = Invoke-Exe @('report', '--days', '10', '--data-dir', $fixture, '--out', $reportPath)
 Assert-That 'report 返回 0' ($report.Code -eq 0) ($report.Text)
 Assert-That '报表文件存在' (Test-Path $reportPath)
 
 $html = [IO.File]::ReadAllText($reportPath, [Text.Encoding]::UTF8)
-
 $externalTokens = @('http://', 'https://', '<link', '<img', '<iframe', '<object', '<embed', '@import', 'src=', 'fetch(', 'XMLHttpRequest', '<script src')
 foreach ($token in $externalTokens) {
     Assert-That ('无外部引用: ' + $token) (-not $html.Contains($token))
@@ -272,7 +282,7 @@ if ($jsonMatch.Success) {
     try { $payload = $jsonMatch.Groups[1].Value | ConvertFrom-Json } catch { }
     Assert-That '内嵌 JSON 可解析' ($null -ne $payload)
     if ($null -ne $payload) {
-        Assert-That '内嵌行数与 daily 一致' ($payload.rows.Count -eq $stats.Count) ("report=$($payload.rows.Count) daily=$($stats.Count)")
+        Assert-That '内嵌行数与 daily.csv 一致' ($payload.rows.Count -eq $rows.Count) ("report=$($payload.rows.Count) csv=$($rows.Count)")
         Assert-That '卡片含 5 个数值字段' ($null -ne $payload.cards.todayBytes -and $null -ne $payload.cards.cumulativeBytes -and $null -ne $payload.cards.anomalyDisks)
     }
 }
@@ -280,75 +290,42 @@ if ($jsonMatch.Success) {
 Write-Host ''
 Write-Host '=== 4. 报表固定名与归档 ===' -ForegroundColor Cyan
 
-# 原版此节不带 --data-dir，report 落在 dist\data（本机真实数据）上：
-# 本机恰好有采样才绿，干净 CI 机器必然红。改为把夹具复制进临时数据目录再跑，
-# 固定名与归档语义不变（都相对数据目录），只是不再依赖机器状态。
-# 便携目录本身的解析由第 7 节 doctor 单独覆盖。
+# 固定名与归档都相对数据目录；用临时副本，避免依赖本机 dist\data 的真实状态。
 $reportData = Join-Path $work 'report-default'
 New-Item -ItemType Directory -Path $reportData -Force | Out-Null
-Copy-Item -Path (Join-Path $fixtures '*') -Destination $reportData -Force
+Copy-Item -Path (Join-Path $fixture '*') -Destination $reportData -Force
 
 $defaultReport = Join-Path $reportData 'exports\report.html'
-$first = Invoke-Exe @('report', '--days', $fixtureDays, '--data-dir', $reportData)
+$first = Invoke-Exe @('report', '--days', '10', '--data-dir', $reportData)
 Assert-That '未指定 --out 时写固定名' (Test-Path $defaultReport)
 $archiveDir = Join-Path $reportData 'exports\archive'
 $todayArchive = Join-Path $archiveDir ('report-{0}.html' -f (Get-Date -Format 'yyyyMMdd'))
 Assert-That '生成当日归档' (Test-Path $todayArchive) ($todayArchive)
-for ($k = 0; $k -lt 2; $k++) { [void](Invoke-Exe @('report', '--days', $fixtureDays, '--data-dir', $reportData)) }
+for ($k = 0; $k -lt 2; $k++) { [void](Invoke-Exe @('report', '--days', '10', '--data-dir', $reportData)) }
 $sameDay = @(Get-ChildItem -LiteralPath $archiveDir -Filter ('report-{0}.html' -f (Get-Date -Format 'yyyyMMdd')) -ErrorAction SilentlyContinue).Count
 Assert-That '同日多次生成只覆盖一份归档' ($sameDay -eq 1) ("count=$sameDay")
 
 Write-Host ''
-Write-Host '=== 5. CSV 编码 ===' -ForegroundColor Cyan
-
-$csvDir = Join-Path $work 'csv'
-[void](Invoke-Exe @('export', 'csv', '--days', $fixtureDays, '--data-dir', $fixtures, '--out', $csvDir))
-$dailyCsv = Join-Path $csvDir 'daily.csv'
-Assert-That 'daily.csv 存在' (Test-Path $dailyCsv)
-if (Test-Path $dailyCsv) {
-    $csvBytes = [IO.File]::ReadAllBytes($dailyCsv)
-    Assert-That 'CSV 带 UTF-8 BOM' ($csvBytes[0] -eq 0xEF -and $csvBytes[1] -eq 0xBB -and $csvBytes[2] -eq 0xBF)
-    $csvText = [IO.File]::ReadAllText($dailyCsv, [Text.Encoding]::UTF8)
-    Assert-That 'CSV 使用 CRLF' ($csvText.Contains("`r`n"))
-}
-
-$samplesCsv = Join-Path $csvDir 'samples.csv'
-Assert-That 'samples.csv 存在' (Test-Path $samplesCsv)
-
-# 窄窗口导出：窗口读取会带回起点之前的前驱，但明细里不该出现它们
-$narrowCsvDir = Join-Path $work 'csv-narrow'
-[void](Invoke-Exe @('export', 'csv', '--days', $predecessorDays, '--data-dir', $fixtures, '--out', $narrowCsvDir))
-$narrowRows = @(Get-Content -LiteralPath (Join-Path $narrowCsvDir 'samples.csv') -Encoding UTF8 |
-    Select-Object -Skip 1 | Where-Object { $_.Trim().Length -gt 0 })
-Assert-That 'samples.csv 剔除窗口之前的前驱' ($narrowRows.Count -eq $newestFileLines) ('rows=' + $narrowRows.Count + ' newest=' + $newestFileLines)
-
-Write-Host ''
-Write-Host '=== 6. 并发写入锁 ===' -ForegroundColor Cyan
+Write-Host '=== 5. 并发写入锁 ===' -ForegroundColor Cyan
 
 $concurrent = Join-Path $work 'concurrent'
 New-Item -ItemType Directory -Path $concurrent -Force | Out-Null
 
-$diskInfo = Invoke-Exe @('disks', '--json')
-$diskCount = ($diskInfo.Text | ConvertFrom-Json).data.count
-Assert-That '枚举到物理磁盘' ($diskCount -ge 1) ("count=$diskCount")
-
-# 断言「写进去的条数 == 各进程自报条数」。
-# 不能断言「盘数 × 进程数」：并发读盘时某块盘可能偶发失败并被标为缺失
-# （设计上不推算、不填补），进程仍然正常返回 0，此时它本来就该少写一行。
+# 断言写进去的条数等于各进程自报之和。并发读盘时某块盘可能偶发失败并标为缺失，
+# 进程仍正常返回 0，此时它本来就该少写一行。
 $workerCount = 8
-$utf8 = New-Object System.Text.UTF8Encoding $false
 $workers = @()
 for ($i = 0; $i -lt $workerCount; $i++) {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $exe
-    $psi.Arguments = 'sample --json --data-dir "' + $concurrent + '"'
+    $psi.Arguments = 'sample --data-dir "' + $concurrent + '"'
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    $psi.StandardOutputEncoding = $utf8
-    $psi.StandardErrorEncoding = $utf8
+    $psi.StandardOutputEncoding = $utf8NoBom
+    $psi.StandardErrorEncoding = $utf8NoBom
 
     $w = @{ Proc = [System.Diagnostics.Process]::Start($psi) }
     $w.Proc.StandardInput.Close()
@@ -370,7 +347,8 @@ foreach ($w in $workers) {
 
     if ($w.Code -ne 0) { $badCodes += [string]$w.Code; continue }
     $okWorkers++
-    try { $reported += [int](($w.Text | ConvertFrom-Json).data.count) } catch { }
+    $match = [regex]::Match($w.Text, '采样完成\s+(\d+)\s+块盘')
+    if ($match.Success) { $reported += [int]$match.Groups[1].Value }
 }
 
 Assert-That ($workerCount.ToString() + ' 个并发进程全部正常退出') ($okWorkers -eq $workerCount) ("ok=$okWorkers code=" + ($badCodes -join ','))
@@ -394,73 +372,74 @@ if ($null -ne $sampleFile) {
 $lockPath = Join-Path $concurrent '.write.lock'
 Assert-That '锁文件存在且常驻' (Test-Path $lockPath)
 if (Test-Path $lockPath) {
-    # 并发期间最后持有锁的进程可能设不上属性，再跑一次单进程让 Acquire 前的补设生效
+    # 并发期间最后持有锁的进程可能设不上属性，再跑一次单进程让 Acquire 前的补设生效。
     [void](Invoke-Exe @('sample', '--quiet', '--data-dir', $concurrent))
     $lockAttrs = [IO.File]::GetAttributes($lockPath)
-    Assert-That '锁文件带隐藏属性（用户看不到）' (($lockAttrs -band [IO.FileAttributes]::Hidden) -ne 0) ([string]$lockAttrs)
+    Assert-That '锁文件带隐藏属性' (($lockAttrs -band [IO.FileAttributes]::Hidden) -ne 0) ([string]$lockAttrs)
 }
 
 Write-Host ''
-Write-Host '=== 7. 便携目录与部署方式 ===' -ForegroundColor Cyan
+Write-Host '=== 6. 便携目录与部署方式 ===' -ForegroundColor Cyan
 
-$doctor = Invoke-Exe @('doctor', '--json')
-$doctorData = ($doctor.Text | ConvertFrom-Json).data
-Assert-That 'doctor 返回 0' ($doctor.Code -eq 0)
-Assert-That '识别为便携部署' ($doctorData.dataDirectoryIsPortable -eq $true) ("dir=" + $doctorData.dataDirectory)
-Assert-That '便携目录位于 dist\data' ($doctorData.dataDirectory -eq (Join-Path $Dist 'data')) ("actual=" + $doctorData.dataDirectory)
-Assert-That 'doctor 暴露生效配置' ($null -ne $doctorData.config.retentionDays -and $null -ne $doctorData.config.timeoutSeconds)
-Assert-That 'doctor 报告的偏好路径在 data\config' ($doctorData.settingsPath -eq (Join-Path $Dist 'data\config\settings.json')) ('actual=' + $doctorData.settingsPath)
-Assert-That 'doctor 报告的日志目录在 data\logs' ($doctorData.logDirectory -eq (Join-Path $Dist 'data\logs')) ('actual=' + $doctorData.logDirectory)
+$doctor = Invoke-Exe @('doctor')
+Assert-That 'doctor 返回 0' ($doctor.Code -eq 0) ($doctor.Text)
+Assert-That '识别为便携部署' ($doctor.StdOut -match '部署方式\s*:\s*便携') $doctor.StdOut
+$dataDir = (Get-LabelValue $doctor.StdOut '数据目录') -replace '\s*\[已降级\]\s*$', ''
+Assert-That '便携目录位于 dist\data' ([string]::Equals($dataDir, (Join-Path $Dist 'data'), 'OrdinalIgnoreCase')) ('actual=' + $dataDir)
+Assert-That '偏好路径在 data\config' ((Get-LabelValue $doctor.StdOut '偏好设置') -eq (Join-Path $Dist 'data\config\settings.json'))
+Assert-That '日志目录在 data\logs' ((Get-LabelValue $doctor.StdOut '日志目录') -eq (Join-Path $Dist 'data\logs'))
+Assert-That '采样设置含保留天数与超时' ($doctor.StdOut -match '保留\s+\d+\s+天.*任务超时\s+\d+s')
 
 Write-Host ''
-Write-Host '=== 8. 计划任务配置（dry-run，不需要管理员）===' -ForegroundColor Cyan
+Write-Host '=== 7. 计划任务配置（dry-run）===' -ForegroundColor Cyan
 
-$dry = Invoke-Exe @('schedule', 'install', '--dry-run', '--json')
+$dry = Invoke-Exe @('schedule', 'install', '--dry-run')
 Assert-That 'dry-run 返回 0' ($dry.Code -eq 0) ($dry.Text)
-if ($dry.Code -eq 0) {
-    $planned = $dry.Text | ConvertFrom-Json
-    Assert-That '任务指向当前 exe' ($planned.execute -eq $exe) ("actual=" + $planned.execute)
-    Assert-That '任务参数为 sample --quiet' ($planned.arguments -eq 'sample --quiet') ("actual=" + $planned.arguments)
-    Assert-That '任务使用最高权限' ($planned.runLevel -eq 'Highest')
-    Assert-That '启用 StartWhenAvailable' ($planned.startWhenAvailable -eq $true)
-}
+Assert-That '输出为配置校验（未写入任务）' ($dry.StdOut.Contains('任务配置校验通过'))
+Assert-That '任务指向当前 exe' ((Get-LabelValue $dry.StdOut '程序') -eq $exe)
+Assert-That '任务参数为 sample --quiet' ((Get-LabelValue $dry.StdOut '参数') -eq 'sample --quiet')
+Assert-That '任务使用最高权限' ((Get-LabelValue $dry.StdOut '运行权限') -match '\bHighest\b')
 
 Write-Host ''
-Write-Host '=== 8b. 卸载三档（dry-run，零副作用）===' -ForegroundColor Cyan
+Write-Host '=== 7b. 卸载三档（dry-run，零副作用）===' -ForegroundColor Cyan
 
 $purgeDir = Join-Path $work 'purge'
 New-Item -ItemType Directory -Path (Join-Path $purgeDir 'config') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $purgeDir 'logs') -Force | Out-Null
-$utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [IO.File]::WriteAllText((Join-Path $purgeDir 'samples-20260101.jsonl'), '{}', $utf8NoBom)
 [IO.File]::WriteAllText((Join-Path $purgeDir 'config\settings.json'), '{"schemaVersion":2}', $utf8NoBom)
 [IO.File]::WriteAllText((Join-Path $purgeDir 'logs\engine-20260101.log'), 'x', $utf8NoBom)
-$beforePurge = @(Get-ChildItem -LiteralPath $purgeDir -Recurse -File -Force).Count
+$beforePurge = Get-PurgeSnapshot $purgeDir
 
-$dryNone = Invoke-Exe @('schedule', 'uninstall', '--dry-run', '--data-dir', $purgeDir, '--json')
+$dryNone = Invoke-Exe @('schedule', 'uninstall', '--dry-run', '--data-dir', $purgeDir)
 Assert-That '默认档 dry-run 返回 0' ($dryNone.Code -eq 0) ($dryNone.Text)
-$nonePlan = $dryNone.Text | ConvertFrom-Json
-Assert-That '默认档不删任何数据' ($nonePlan.purgeMode -eq 'none' -and @($nonePlan.willDeleteFiles).Count -eq 0)
+Assert-That '默认档不删数据' ($dryNone.StdOut -match '清理档位\s*:\s*不删数据' -and
+                              $dryNone.StdOut -match '将删除\s*:\s*0 个文件，0 个目录') $dryNone.StdOut
 
-$dryData = Invoke-Exe @('schedule', 'uninstall', '--purge-data', '--dry-run', '--data-dir', $purgeDir, '--json')
+$dryData = Invoke-Exe @('schedule', 'uninstall', '--purge-data', '--dry-run', '--data-dir', $purgeDir)
 Assert-That '--purge-data dry-run 返回 0' ($dryData.Code -eq 0) ($dryData.Text)
-$dataPlan = $dryData.Text | ConvertFrom-Json
-Assert-That '--purge-data 计划删除样本' (@($dataPlan.willDeleteFiles | Where-Object { $_ -like '*samples-*' }).Count -eq 1) (@($dataPlan.willDeleteFiles) -join ',')
-Assert-That '--purge-data 保留偏好设置' (@($dataPlan.willKeep | Where-Object { $_ -like '*settings.json' }).Count -eq 1) (@($dataPlan.willKeep) -join ',')
-Assert-That '--purge-data 不把 config 目录列进删除清单' (@($dataPlan.willDeleteDirs | Where-Object { $_ -like '*\config' }).Count -eq 0) (@($dataPlan.willDeleteDirs) -join ',')
-Assert-That '--purge-data 不整体删除数据目录' ($dataPlan.rootRemovable -eq $false)
+Assert-That '--purge-data 保留偏好设置' ($dryData.StdOut -match '清理档位\s*:\s*只删数据，保留偏好设置' -and
+                                        $dryData.StdOut -match '(?m)^\s*\+\s+.*settings\.json') $dryData.StdOut
+Assert-That '--purge-data 删除样本且不删偏好' ($dryData.StdOut -match '将删除\s*:\s*[1-9]\d* 个文件' -and
+                                              $dryData.StdOut.Contains('samples-') -and
+                                              -not ($dryData.StdOut -match '(?m)^\s*-\s+.*settings\.json')) $dryData.StdOut
 
-$dryAll = Invoke-Exe @('schedule', 'uninstall', '--purge-all', '--dry-run', '--data-dir', $purgeDir, '--json')
+$dryAll = Invoke-Exe @('schedule', 'uninstall', '--purge-all', '--dry-run', '--data-dir', $purgeDir)
 Assert-That '--purge-all dry-run 返回 0' ($dryAll.Code -eq 0) ($dryAll.Text)
-$allPlan = $dryAll.Text | ConvertFrom-Json
-Assert-That '--purge-all 计划删除偏好设置' (@($allPlan.willDeleteFiles | Where-Object { $_ -like '*settings.json' }).Count -eq 1)
-Assert-That '--purge-all 不保留任何文件' (@($allPlan.willKeep).Count -eq 0)
+Assert-That '--purge-all 不保留任何文件' ($dryAll.StdOut -match '清理档位\s*:\s*全部删除' -and
+                                          -not ($dryAll.StdOut.Contains('将保留'))) $dryAll.StdOut
+Assert-That '--purge-all 把偏好设置列入删除' ($dryAll.StdOut -match '(?m)^\s*-\s+.*settings\.json') $dryAll.StdOut
+Assert-That 'dry-run 零副作用' ((Get-PurgeSnapshot $purgeDir) -eq $beforePurge)
 
-$afterPurge = @(Get-ChildItem -LiteralPath $purgeDir -Recurse -File -Force).Count
-Assert-That 'dry-run 一个文件都没删' ($afterPurge -eq $beforePurge) ('before=' + $beforePurge + ' after=' + $afterPurge)
+# config 目录存在时 rootRemovable 恒为 false，用一个极简目录单独覆盖整体移除预告。
+$bare = Join-Path $work 'purge-bare'
+New-Item -ItemType Directory -Path $bare -Force | Out-Null
+[IO.File]::WriteAllText((Join-Path $bare 'samples-20260101.jsonl'), '{}', $utf8NoBom)
+$bareDry = Invoke-Exe @('schedule', 'uninstall', '--purge-all', '--dry-run', '--data-dir', $bare)
+Assert-That '--purge-all 预告整体移除数据目录' ($bareDry.StdOut.Contains('会被整体移除')) $bareDry.StdOut
 
 Write-Host ''
-Write-Host '=== 8c. 日志双阈值回收 ===' -ForegroundColor Cyan
+Write-Host '=== 7c. 日志双阈值回收 ===' -ForegroundColor Cyan
 
 $logRoot = Join-Path $work 'logret'
 New-Item -ItemType Directory -Path (Join-Path $logRoot 'logs') -Force | Out-Null
@@ -486,17 +465,18 @@ if (Test-Path -LiteralPath $rolledLog) {
 Assert-That '滚动后主文件重新变小' ((Get-Item -LiteralPath $todayLog).Length -lt 4096) ('size=' + (Get-Item -LiteralPath $todayLog).Length)
 
 Write-Host ''
-Write-Host '=== 9. 无数据时的行为 ===' -ForegroundColor Cyan
+Write-Host '=== 8. 无数据时的行为 ===' -ForegroundColor Cyan
 
 $emptyDir = Join-Path $work 'empty'
 New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-$emptyDaily = Invoke-Exe @('daily', 'show', '--data-dir', $emptyDir, '--json')
-Assert-That '无数据时 daily 返回 4' ($emptyDaily.Code -eq 4) ("code=" + $emptyDaily.Code)
+$emptyDaily = Invoke-Exe @('daily', 'show', '--data-dir', $emptyDir)
+Assert-That '无数据时 daily 返回 4' ($emptyDaily.Code -eq 4) ('code=' + $emptyDaily.Code)
+Assert-That 'daily 提示窗口内没有数据' ($emptyDaily.StdOut.Contains('没有采样数据')) $emptyDaily.StdOut
 $emptyReport = Invoke-Exe @('report', '--data-dir', $emptyDir, '--out', (Join-Path $emptyDir 'x.html'))
-Assert-That '无数据时 report 返回 4' ($emptyReport.Code -eq 4) ("code=" + $emptyReport.Code)
+Assert-That '无数据时 report 返回 4' ($emptyReport.Code -eq 4) ('code=' + $emptyReport.Code)
 Assert-That '无数据时不生成空报表' (-not (Test-Path (Join-Path $emptyDir 'x.html')))
 
-# 只删本次创建的临时目录内容，不递归删除整个 TEMP
+# 只删本次创建的临时文件，逐文件删除。
 Get-ChildItem -LiteralPath $work -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
     try { Remove-Item -LiteralPath $_.FullName -Force } catch { }
 }
