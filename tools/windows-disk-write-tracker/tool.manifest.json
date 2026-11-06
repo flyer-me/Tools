@@ -23,14 +23,6 @@
       "pattern": "dist/*.exe"
     },
     {
-      "kind": "lib",
-      "pattern": "dist/*.dll"
-    },
-    {
-      "kind": "runtimeconfig",
-      "pattern": "dist/*.json"
-    },
-    {
       "kind": "doc",
       "pattern": "dist/README.txt"
     },

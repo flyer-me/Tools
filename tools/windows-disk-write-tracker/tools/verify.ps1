@@ -158,37 +158,17 @@ Assert-That 'xUnit 单测全部通过' ($testExit -eq 0) ((@($testOut) | Select-
 Write-Host ''
 Write-Host '=== 1. 分发形态 ===' -ForegroundColor Cyan
 
-$required = @('DiskWriteTracker.exe', 'README.txt', 'data')
+$expected = @('DiskWriteTracker.exe', 'README.txt', 'data')
 $entries = @(Get-ChildItem -LiteralPath $Dist -Force | ForEach-Object { $_.Name })
-$missingEntry = @($required | Where-Object { $entries -notcontains $_ })
-Assert-That '根目录三项齐全' ($missingEntry.Count -eq 0) ('缺少: ' + ($missingEntry -join ', '))
-
-# 多文件发布：exe + 旁置运行时 dll + runtimeconfig.json
-$allowedExt = @('.exe', '.dll', '.json', '.txt')
-$extra = @($entries | Where-Object {
-    $name = $_
-    if ($required -contains $name) { return $false }
-    $ext = [IO.Path]::GetExtension($name).ToLowerInvariant()
-    return $allowedExt -notcontains $ext
-})
-Assert-That '根目录只有运行时产物（exe/dll/json/txt）' ($extra.Count -eq 0) ('多余: ' + ($extra -join ', '))
-
-$junk = @(Get-ChildItem -LiteralPath $Dist -Recurse -Force -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Extension -in @('.ps1', '.cmd', '.bat', '.psm1') -or $_.Name -like '*.schema.json' })
-Assert-That '产物内无脚本或 schema 残留' ($junk.Count -eq 0) (($junk | ForEach-Object { $_.Name }) -join ',')
-
-$pdb = @(Get-ChildItem -LiteralPath $Dist -Recurse -Force -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Extension -eq '.pdb' })
-Assert-That '产物内无 PDB' ($pdb.Count -eq 0) (($pdb | ForEach-Object { $_.Name }) -join ',')
+$shapeDiff = @(Compare-Object -ReferenceObject @($expected | Sort-Object) -DifferenceObject @($entries | Sort-Object))
+Assert-That '根目录恰 3 项' ($shapeDiff.Count -eq 0) (($entries | Sort-Object) -join ', ')
+Assert-That '无旁置 dll' (@($entries | Where-Object { $_ -like '*.dll' }).Count -eq 0)
+Assert-That '无旁置 json' (@($entries | Where-Object { $_ -like '*.json' }).Count -eq 0)
 
 $exeInfo = Get-Item -LiteralPath $exe
-Assert-That 'exe 为托管入口壳（< 5 MB，依赖旁置）' ($exeInfo.Length -lt 5MB) ('size=' + [math]::Round($exeInfo.Length / 1MB, 1) + ' MB')
+# 区间按首轮实测 11,777,303 B 的 ±20% 取值。
+Assert-That 'exe 为压缩单文件（9-14 MB）' ($exeInfo.Length -ge 9MB -and $exeInfo.Length -le 14MB) ('size=' + [math]::Round($exeInfo.Length / 1MB, 1) + ' MB')
 
-$sideDlls = @(Get-ChildItem -LiteralPath $Dist -File -Force -ErrorAction SilentlyContinue |
-    Where-Object { $_.Extension -eq '.dll' })
-Assert-That 'exe 旁有自包含运行时 dll' ($sideDlls.Count -gt 0) ('count=' + $sideDlls.Count)
-
-Assert-That 'config 目录已消失' (-not (Test-Path (Join-Path $Dist 'config')))
 Assert-That 'data 目录存在（便携模式触发条件）' (Test-Path (Join-Path $Dist 'data'))
 Assert-That '偏好设置不在数据目录根' (-not (Test-Path (Join-Path $Dist 'data\settings.json')))
 

@@ -1,7 +1,26 @@
 <Project>
 
   <!-- 仓库构建入口是裸 dotnet publish -c Release，参数在 tool.manifest.json 的 build.args。
-       publish 只产出运行时文件；README.txt 与空 data\ 由这里补齐。 -->
+       CleanDistRoot 清上一轮留在 dist 根目录的文件，StageDist 在 publish 后补 README.txt 与 data\。 -->
+  <Target Name="CleanDistRoot" BeforeTargets="Publish"
+          Condition="'$(Configuration)' == 'Release' and '$(MSBuildProjectName)' == 'DiskWriteTracker.Cli'">
+    <PropertyGroup>
+      <_DistDir>$(MSBuildThisFileDirectory)dist\</_DistDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <!-- 单层通配只命中根目录文件。本次产物与 data\ 一律排除，
+           清理无论排在文件复制之前还是之后都只删上一轮的残留。 -->
+      <_StaleRootFile Include="$(_DistDir)*"
+                      Exclude="$(_DistDir)data;$(_DistDir)DiskWriteTracker.exe;$(_DistDir)README.txt" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_CleanList>@(_StaleRootFile->'%(Identity)', '|')</_CleanList>
+    </PropertyGroup>
+    <Error Condition="$(_CleanList.Contains('\data\'))"
+           Text="CleanDistRoot 命中 dist\data，构建中止" />
+    <Delete Files="@(_StaleRootFile)" />
+  </Target>
+
   <Target Name="StageDist" AfterTargets="Publish"
           Condition="'$(Configuration)' == 'Release' and '$(MSBuildProjectName)' == 'DiskWriteTracker.Cli'">
     <PropertyGroup>

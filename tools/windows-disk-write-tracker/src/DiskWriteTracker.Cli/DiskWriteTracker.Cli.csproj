@@ -9,8 +9,9 @@
          属于 manifest 的产物契约（artifacts pattern 引用 dist/）。 -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
-    <!-- 交付形态：自包含多文件（依赖旁置 dll），用户无需安装运行时 -->
-    <PublishSingleFile>false</PublishSingleFile>
+    <!-- 交付形态：压缩单文件，运行时与托管依赖全部打进 exe -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <!-- 裁剪未用 BCL。Core 零 NuGet 依赖，仅有 WScript.Shell 运行时 COM 晚绑定
          （不受 IL 裁剪影响）；STJ 载荷已改用源生成上下文静态引用 -->
     <PublishTrimmed>true</PublishTrimmed>
