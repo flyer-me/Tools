@@ -15,8 +15,9 @@
          （不受 IL 裁剪影响）；STJ 载荷已改用源生成上下文静态引用 -->
     <PublishTrimmed>true</PublishTrimmed>
     <PublishReadyToRun>false</PublishReadyToRun>
-    <!-- 反射式 STJ 开关。CLI 与报表载荷已改用源生成上下文静态引用 -->
-    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- 关闭反射式序列化：全部序列化走源生成上下文，裁剪器可移除反射序列化器。
+         此前开启是因为 JSON 输出走运行时类型解析，该路径已删除。 -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <!-- 只携带英文与简体中文资源 -->
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
