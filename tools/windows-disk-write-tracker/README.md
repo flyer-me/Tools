@@ -10,15 +10,13 @@
 
 ```
 dist\
-  DiskWriteTracker.exe    托管入口壳，双击即菜单
-  *.dll                   自包含运行时，必须与 exe 同目录
-  *.json                  运行时配置（runtimeconfig / deps）
+  DiskWriteTracker.exe    压缩单文件，自含运行时，双击即菜单
   README.txt              给用户看的说明
   data\                   数据根（存在即触发便携模式）
 ```
 
-发布为 `net10.0-windows` / `win-x64` 多文件自包含形态，产物约 22.7 MiB。
-升级时用新版本的整个文件夹覆盖旧目录。
+发布为 `net10.0-windows` / `win-x64` 压缩单文件自包含形态，产物 11.23 MiB。
+升级时覆盖 `DiskWriteTracker.exe` 即可，`data\` 与每日计划任务保持原样。
 
 | 角色 | 触发方式 | 行为 |
 |---|---|---|
@@ -85,7 +83,7 @@ dist\
 
 **发布与 CI 路径**：仓库根 `scripts\build-tool.ps1 -ToolId windows-disk-write-tracker`。
 它是本地与 CI 共享的唯一构建分派入口；manifest 声明了 `build.verify` 后，
-构建成功会自动执行 `tools\verify.ps1` 的验收断言（非零退出码即失败）。
+构建成功会自动执行 `tools\verify.ps1`（段首 `dotnet test`，其后进程契约断言），非零退出码即失败。
 
 `tools\` 下的脚本是本工具的自定义构建与验收资产：
 `verify.ps1`（验收断言）、`bootstrap-sdk.ps1` + `dotnet-install.ps1`
@@ -97,7 +95,10 @@ powershell -ExecutionPolicy Bypass -File tools\bootstrap-sdk.ps1
 ```
 
 目标框架 `net10.0-windows` / `win-x64`，`global.json` 钉 SDK `10.0.403`。
-发布属性固化在 `DiskWriteTracker.Cli.csproj`，裸 `dotnet publish -c Release -o dist` 即产出交付物。
+发布属性固化在 `DiskWriteTracker.Cli.csproj`（`PublishSingleFile` +
+`EnableCompressionInSingleFile`），裸 `dotnet publish -c Release -o dist` 即产出交付物。
+`Directory.Build.targets` 的 `CleanDistRoot` 清 dist 根目录旧文件，`StageDist` 补 `README.txt` 与 `data\`；
+`data\` 及其内容不参与清理。
 
 ---
 
@@ -355,4 +356,4 @@ config/default.json           引擎配置（编译进 exe 的默认值来源）
 | `.cmd` `.bat` | **纯 ASCII** + 无 BOM + CRLF | BOM 会被当成命令的一部分执行 |
 | `.txt` `.md` | UTF-8 带 BOM + CRLF | 记事本友好 |
 
-`.gitattributes` 已钉住换行，`verify.ps1` 第 1 节校验产物形态。
+`.gitattributes` 已钉住换行，`verify.ps1` 第 1 节校验根目录恰 3 项。

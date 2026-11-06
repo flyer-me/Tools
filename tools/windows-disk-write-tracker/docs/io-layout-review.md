@@ -1,4 +1,4 @@
-# 数据目录组织方式审理
+﻿# 数据目录组织方式审理
 
 对 `DiskWriteTracker` 在数据目录里落盘的东西做一次体量与代价核算，回答四个问题：
 `samples-*.jsonl` 会不会文件太多、日志会不会文件太多、`settings.json` 该不该放在 `data` 根、
@@ -124,7 +124,7 @@ settings.json                  108 B
 
 顺带删掉了 `logDays` 这个死字段（`settings.json` 升到 `schemaVersion 2`）。日志保留天数
 是引擎行为，计划任务也受它约束，本来就不该藏在"用户偏好"里。
-`build.ps1` 的迁移函数也不再把这个字段搬进新文件 —— 搬过去只会让人以为它还在生效。
+偏好读写落在 `data\config\settings.json`（`schemaVersion 2`），迁移链已随旧构建脚本一同删除。
 
 ---
 
@@ -153,13 +153,12 @@ data\
 
 | 命令 | 移除任务 | 删样本与日志 | 删偏好 |
 |---|---|---|---|
-| `schedule uninstall` | ✓ | | |
-| `schedule uninstall --purge-data` | ✓ | ✓ | |
-| `schedule uninstall --purge-all` | ✓ | ✓ | ✓ |
+| `schedule uninstall` | 是 | | |
+| `schedule uninstall --purge-data` | 是 | 是 | |
+| `schedule uninstall --purge-all` | 是 | 是 | 是 |
 
 三档都支持 `--dry-run`，逐个列出将要删除和将要保留的文件，一个都不真删。
-dry-run 与实际删除走**同一个** `Get-PurgePlan` 函数 —— 否则"预览说只删 A、实际删了 A+B"
-这种漂移永远测不出来，而它恰恰是最危险的一类错误。
+dry-run 与实际删除共用 `Get-PurgePlan`，预览与实删保持一致。
 
 ### 踩到的坑：8.3 短名让前缀比较失效
 
@@ -189,10 +188,11 @@ dry-run 与实际删除走**同一个** `Get-PurgePlan` 函数 —— 否则"预
 
 ### 体积实测（三组，同一份源码、同一套发布参数）
 
-> 历史实测：本节数据采于单文件发布时代。当前已改为多文件自包含发布
-> （`PublishSingleFile=false`），下列体积与产物形态结论仅用于当时的取舍判断。
+> 历史实测：本节数据采于单文件发布时代，当时开启了 `PublishReadyToRun`。
+> 现行参数为压缩单文件 + `PublishReadyToRun=false` + trim，实测 exe 11,777,303 B，
+> 与下列 37 MB 数据不可直接比较；体积结论仅用于当时的取舍判断。
 
-发布参数：`--self-contained win-x64`、`PublishSingleFile` + `IncludeNativeLibrariesForSelfExtract`
+当时的发布参数：`--self-contained win-x64`、`PublishSingleFile` + `IncludeNativeLibrariesForSelfExtract`
 + `EnableCompressionInSingleFile` + `PublishReadyToRun`、`DebugType=none`。
 
 | 变体 | exe 字节 | 相对 A | 产物文件数 | 冷启动（3 次） |
@@ -265,22 +265,20 @@ dry-run 与实际删除走**同一个** `Get-PurgePlan` 函数 —— 否则"预
 
 **构建与验收**
 
-| 文件 | 改动 |
+| 文件 | 当时的改动 |
 |---|---|
-| `build.ps1` | 迁移目标改 `data\config\settings.json`；迁移函数不再写 `logDays`，`schemaVersion` = 2 |
-| `verify.ps1` | 窗口天数从夹具文件名反推（不再写死 30）；新增窗口前驱、卸载三档、日志双阈值等断言 |
+| `verify.ps1` | 窗口天数从夹具文件名反推（不写死 30）；新增窗口前驱、卸载三档、日志双阈值等断言 |
 | `dist-assets/README.txt` | 数据布局、日志自动回收、卸载三档 |
-| `verify-manual.md` | 第 7/8/10 项按新行为重写，新增 10b（迁移）与 10c（日志回收） |
 
-`tools\verify.ps1` 当前 **114 项断言全绿**。
+当前验收已改为双层：`tools\verify.ps1` 段首调 `dotnet test`（37 个用例），其后 98 条进程契约断言全绿；
+静态夹具与人工清单已删除，夹具由代码在运行时生成。`build.verify` 由 `scripts\build-tool.ps1` 统一调用。
 
 ---
 
 ## 七、遗留与未做的事
 
-1. **报表归档没有上限。** `exports\archive\` 每天一份、每份约 50 KB，10 年约 180 MB。
-   本轮没动它 —— 它是用户显式要的产物，且与"清理数据"语义不同（删了要重新生成）。
-   如果要治理，建议与日志同构：`archiveRetentionDays`，默认 90。
+1. **报表归档上限已定为 30 份。** 当时按每天一份、每份约 50 KB、10 年约 180 MB 估算；
+   `ReportWriter.cs` 的 `Skip(30)` 现在只保留最近 30 份。
 2. **`JsonlSampleStore.Append` 每次 `Flush(flushToDisk: true)`。** 对每天一次的采样无所谓，
    但如果将来提高采样频率，这个 fsync 会成为写入放大点。
 3. **前驱回扫上限 90 天**是经验值。一块盘离线超过 90 天后重新上线时，窗口第一天会是基线日，
@@ -295,20 +293,21 @@ dry-run 与实际删除走**同一个** `Get-PurgePlan` 函数 —— 否则"预
 
 | 命令 | 实际产物 | 替代 | 本机使用记录 |
 |---|---|---|---|
-| `daily rebuild` | `daily.json` | `daily show --json` | 0 次（该文件从未生成） |
+| `daily rebuild` | `daily.json` | `daily show` 与 `export csv` 的 `daily.csv` | 0 次（该文件从未生成） |
 | `history` | 终端逐条打印 | `export csv` 的 `samples.csv`（列更多） | 无记录 |
 | `export --all` | 全量 `samples.csv` | `--days` 给一个大数 | 0 次（`menu/3` 从未出现） |
 
 三点值得记下来：
 
 1. **`daily.json` 是"派生数据存成缓存"的典型误判。** 日统计每次都由 JSONL 现算，
-   这个文件既不被程序读、也没被外部消费；要把 `daily show --json` 落盘，shell 重定向一行就够，
+   这个文件既不被程序读、也没被外部消费；要把日统计落盘，`export csv` 一条命令就够，
    不需要一个命令加一个写盘函数。删它同时也撤回了"供外部读取"这个从未兑现的承诺。
 2. **`export --all` 是本次改造自己制造的复杂度。** 窗口读取会顺带带回前驱，明细因此需要过滤；
    为了留一个"不过滤"的出口，又加了一个开关。真正的需求只有"明细必须落在窗口内"这一条。
 3. **`history` 与 `export csv` 数据同源**，区别只是终端表格与 CSV。终端里翻 730 条/年
    本来就不是可用场景。
 
-命令数 16 → 13；`verify.ps1` 断言 118 → 113（删掉的 5 条正是这三个命令的契约断言），当前为 114 项。
+当时命令数 16 → 13；`verify.ps1` 断言 118 → 113（删掉的 5 条正是这三个命令的契约断言），
+随后补到 114 项。当前验收为双层：xUnit 37 个用例 + `verify.ps1` 98 条进程契约断言。
 同时修正了 README 里两处过期描述：`settings.json` 已在 `data\config\` 下，
 `default.json` 也不再有任何"标【保留】但不生效"的键。

@@ -56,13 +56,12 @@
 
 - 框架 `net10.0-windows`，`global.json` 钉 `sdk 10.0.403`（`rollForward=latestFeature`），RID `win-x64`。
 - 本机唯一 SDK：`C:\Program Files\dotnet\dotnet.exe`。`Resolve-Dotnet` 逐个试候选 `dotnet --version`，系统那份优先；`bootstrap-sdk.ps1` 先探测已有 SDK，缺失时才免提权安装。
-- 发布属性：`PublishSingleFile=false`、`PublishTrimmed=true`、`PublishReadyToRun=false`、`SatelliteResourceLanguages=en;zh-Hans`；`SelfContained` 与 `RuntimeIdentifier` 由命令行提供。
-- `Directory.Build.props` 设 `IncludeSourceRevisionInInformationalVersion=false`。SDK 默认把 git commit 嵌进 `AssemblyInformationalVersion`，两仓 HEAD 不同会让同一份源码产出不同字节的 exe/dll（连带 PE 时间戳与 MVID）。关闭后两仓交付产物字节一致。
+- 发布属性固化在 `DiskWriteTracker.Cli.csproj`：`PublishSingleFile=true`、`EnableCompressionInSingleFile=true`、`PublishTrimmed=true`、`PublishReadyToRun=false`、`SelfContained=true`、`RuntimeIdentifier=win-x64`、`JsonSerializerIsReflectionEnabledByDefault=false`、`SatelliteResourceLanguages=en;zh-Hans`。实测 exe 11,777,303 B，`dist\` 根目录恰 3 项。
+- `Directory.Build.props` 设 `IncludeSourceRevisionInInformationalVersion=false`，关闭 SDK 把 git commit 嵌进 `AssemblyInformationalVersion` 的行为，保证同一份源码产出可复现的字节。
 - `DebugType=none` 放在 props（放 csproj 只对入口项目生效）；`EnforceCodeStyleInBuild` 让 `.editorconfig` 的 IDE0051/IDE0052/CS0169/CS0414 四条 error 规则在命令行构建生效。
-- A：`powershell -ExecutionPolicy Bypass -File tools\build.ps1` → **114/114**，`dist\` 21.5 MB。publish 前清空 `dist\` 根目录文件，`data\` 保留用户数据。
-- B：`scripts\build-tool.ps1 -ToolId windows-disk-write-tracker` → `scripts\assert-artifacts.ps1 -ToolId ...` → `scripts\package-tool.ps1 -ToolId ... -Version 0.0.0-ci`；仓库另有 `scripts\validate-tools.ps1`。四步全过，包 49 文件 / 9.7 MB。
-- B 的 `tool.manifest.json`：`build.args` 传 `-r win-x64 --self-contained true -o dist`，`runtime.entry` 与 `artifacts` 指向 `dist\`。`Directory.Build.targets` 的 `StageDist` 在 publish 后复制 `tools\dist-assets\README.txt` 并建 `dist\data`。
-- `tools\verify.ps1` 是双层门禁：段首调 `dotnet test`（Core.Tests，约 37 个用例），其后约 100 条进程契约断言；数值读 `daily.csv`，doctor / schedule dry-run / 卸载三档解析人读文本。`build.verify` 由 `scripts\build-tool.ps1` 统一调用。
+- 构建与门禁：`scripts\build-tool.ps1 -ToolId windows-disk-write-tracker` → `scripts\assert-artifacts.ps1 -ToolId ...` → `scripts\package-tool.ps1 -ToolId ... -Version 0.0.0-ci`；仓库另有 `scripts\validate-tools.ps1`。四步全过，包 3 文件 / 6.46 MB。
+- `tool.manifest.json`：`build.args` 为 `["-o","dist"]`，`artifacts` 三条（`dist/*.exe`、`dist/README.txt`、`dist/data`）。`Directory.Build.targets` 的 `CleanDistRoot` 单层清 dist 根目录旧文件（排除本次 exe、`README.txt`、`data\`），`StageDist` 在 publish 后复制 `README.txt` 并建 `dist\data`。
+- `tools\verify.ps1` 是双层门禁：段首调 `dotnet test`（Core.Tests，37 个用例），其后 98 条进程契约断言；数值读 `daily.csv`，doctor / schedule dry-run / 卸载三档解析人读文本。`build.verify` 由 `scripts\build-tool.ps1` 统一调用。
 
 ## 5. 数据布局
 
@@ -100,41 +99,42 @@ B 仓库级文件 `.github/workflows/*.yml`、`CHANGELOG.md`、`scripts\*.ps1` �
 |---|---|
 | 前驱回扫上限 | `MaxPredecessorScanDays = 90` 仍在，离线超 90 天会显示「首次采样」 |
 | `Append` 的 `Flush(flushToDisk:true)` | 仍在，提频后是写入放大点 |
-| 形态断言 | 已从「三项白名单」降级为「必需项 + 扩展名白名单」，拦技术文件回流的能力减弱 |
-| `JsonSerializerIsReflectionEnabledByDefault=true` | 仍在，源生成上下文已接入；开关是否可移除：未验证（曾实验移除后功能正常、体积仅差 0.08 MB） |
-| `StartMenuShortcut` COM 晚绑定 | 无自动化覆盖，未实测；IL2072/IL2075 指向此处，判断依据是 COM `IDispatch` 不依赖 IL 元数据，属推断 |
-| IL20xx 裁剪警告 | 2026-11-05 构建日志确认存在：IL2026（STJ 反射序列化）与 IL2072/IL2075（StartMenuShortcut），合计 14 条；构建仍通过 |
+| 形态断言 | 收紧为根目录恰 3 项（exe / README.txt / data）、无旁置 dll 与 json、exe 体积 9–14 MB |
+| `JsonSerializerIsReflectionEnabledByDefault` | 已改为 false；全部序列化走源生成上下文，反射序列化器由裁剪器移除 |
+| `StartMenuShortcut` COM 晚绑定 | 单文件产物烟测下快捷方式文件仍存在；IL2072/IL2075 是裁剪分析告警，运行时走 `IDispatch` 与托管程序集加载无关 |
+| IL20xx 裁剪警告 | 2026-11-06 构建日志仍有 IL2026（`JsonSerializer.Serialize` options 重载）与 IL2072/IL2075（StartMenuShortcut）；构建通过，功能烟测全绿 |
 | B 仓历史提交 `8ac833f` | 含旧版真实序列号，后续提交 `9c8e0c2` 已在工作区脱敏；清除历史需 force push 重写全部提交 |
 
-已解决：报表归档上限 30 个（`ReportWriter.cs` 的 `Skip(30)`）；A 的 `dist\` 旧版 native 残留；两仓交付产物字节一致性。
+已解决：报表归档上限 30 个（`ReportWriter.cs` 的 `Skip(30)`）；`dist\` 旧版 native 残留（4.3 MB）；压缩单文件交付；真实 `dist\data` 31 个文件逐哈希未变，改造前后 14 行日统计 CSV 逐字段一致。
 
 ## 9. 已定 / 已否决
 
 **已定**
 
 - 命令集固定为 8 动词；`history`、`export --all`、`daily rebuild` 已删除且不再恢复。
-- 多文件自包含发布取代单文件；升级需整体覆盖目录。
+- 压缩单文件自包含发布（`PublishSingleFile` + `EnableCompressionInSingleFile`）；升级覆盖 exe，`data\` 保留。
 - `net10.0-windows` / `global.json 10.0.403` / `win-x64`；本机只保留一个 SDK。
-- 存储采用 JSONL + `.write.lock`。
-- 偏好一步迁移到 `data\config\settings.json`；产物校验采用扩展名白名单。
-- 两仓整目录复制，README、夹具、脚本、项目文件内容一致；B 只多 2 个仓库适配文件。
-- 交付产物字节一致：关闭 git commit 嵌入、publish 前清空旧文件。
+- 存储采用 JSONL + `.write.lock`；序列化走 STJ 源生成上下文。
+- 偏好落在 `data\config\settings.json`；产物校验采用根目录恰 3 项。
+- B 为唯一开发主线，A 已归档只读；测试夹具由代码生成。
+- 交付产物可复现：关闭 git commit 嵌入、publish 前清理根目录旧文件。
 - 文档口径：技术否定句改肯定式保留信息，安抚/自夸/铺垫/说教删除；过时事实一律修正。
 
 **已否决**
 
-- 单文件发布（35 MB 自解压）、只拷 exe 升级。
 - 恢复三个已删命令、SQLite 存储、GUI 程序、网页内「立即采样」按钮。
 - 命名 Mutex 取代文件锁（S4U 会话跨不过）、删除 `.write.lock`。
-- `Remove-Item -Recurse`；两仓 README 差异化改写；夹具分别维护真实/脱敏序列号。
+- `Remove-Item -Recurse`；在已归档的 A 仓继续开发；夹具分别维护真实/脱敏序列号。
 - 重写 B 仓 git 历史：工作区已达成目标，重写需 force push 且改动全部 28 个提交与其他 7 个工具的 SHA。历史里的旧序列号如需彻底清除，单独授权后再做。
 
-## 10. 范围外与已知误导
+## 10. 文档同步状态
 
-**本次已修**：4 份 `README.txt` 的升级说明（原写「只覆盖 exe 就行」，多文件发布下会删掉必需 dll）；2 份 `io-layout-review.md` 的断言数统一为 114；单文件时代体积实测加「历史实测」标注。
+2026-11-06 六步改造后，全部文档按现行契约同步：
 
-**仍未处理（已知）**
-
-- `tools\verify-manual.md` 仍含同类安抚句与失败判据中的否定措辞。
-- `scripts\build-tool.ps1`:87 注释含「单文件」字样，实为发布属性列举，属技术说明。
-- `io-layout-review.md` 是历史审理记录，第七节部分结论已被后续代码推翻；按历史记录对待。
+- `tools\dist-assets\README.txt` 升级段改为覆盖单个 exe。
+- `README.md` 分发形态、构建参数、验收分层、输出口径全部更新。
+- `docs\handoff.md` 架构、发布属性、门禁、遗留待办、已定决策全部更新。
+- `docs\io-layout-review.md` 保留三组实测数字与冷启动数据，结论与命令改按现行参数表述。
+- `CHANGELOG.md` 旧条目里描述当时状态的句子保留为历史，`[Unreleased]` 记录本次改造。
+- `scripts\build-tool.ps1`:87 的发布属性注释与现状一致。
+- 旧 `tools\verify-manual.md` 与 `tests\fixtures\` 已随测试双层重写删除。

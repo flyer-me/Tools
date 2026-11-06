@@ -300,8 +300,7 @@ internal static class Program
         int days = options.GetInt("days", 90);
         var (resolution, samples) = LoadSamples(days);
 
-        // 默认落数据目录下的 exports，与 report 一致。
-        // 早先锚定 exe 目录，会在用户手工执行 export 时于程序目录旁边凭空长出一个 exports 文件夹。
+        // 默认落到数据目录的 exports，与 report 口径一致。
         string dir = options.Get("out") ?? Path.Combine(resolution.Directory, "exports");
         var outcome = ExportWriter.WriteCsv(samples, days, dir);
 

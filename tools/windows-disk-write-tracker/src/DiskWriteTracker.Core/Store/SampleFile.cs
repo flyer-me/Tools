@@ -5,9 +5,8 @@ namespace DiskWriteTracker.Core.Store;
 /// <summary>
 /// samples-yyyyMMdd.jsonl 文件名的唯一解析入口。
 ///
-/// 之所以要单独收一个类型：这个解析原先在 SamplingRunner（剪枝）、MenuSession（数样本）、
-/// ReportWriter（判断报表是否过期）里各写了一遍，三处对"长度必须是 16"的写法还不完全一致。
-/// 文件名格式一旦变，漏改一处就是"某条路径静默读不到样本"，而这种静默缺失最难查。
+/// 解析原先分散在 SamplingRunner（剪枝）、MenuSession（数样本）、ReportWriter（判断报表是否过期），
+/// 三处对"长度必须是 16"的判断不一致。集中后文件名格式变更只需改一处。
 /// </summary>
 public readonly record struct SampleFile(string Path, DateOnly Date)
 {

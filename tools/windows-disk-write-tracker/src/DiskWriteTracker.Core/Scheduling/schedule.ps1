@@ -88,9 +88,8 @@ function Add-TreeItems {
 
 function Get-PurgePlan {
     <#
-      卸载时的删除清单。dry-run 与实际删除必须走同一个函数：
-      否则"预览说只删 A、实际删了 A+B"这种漂移永远测不出来，而它恰恰是最危险的一类错误。
-      -PurgeData 保留 config\（用户偏好），-PurgeAll 一个不留。
+      卸载时的删除清单。dry-run 与实际删除共用本函数，保证预览与实删一致。
+      -PurgeData 保留 config\（用户偏好），-PurgeAll 全部删除。
     #>
     param([string]$Root, [string]$Mode)
 
