@@ -1,46 +1,50 @@
 ﻿# DiskWriteTracker 交接文档
 
-自包含的接手资料：架构、命令、构建、数据布局、红线、Git 现状、遗留待办与已定决策。最后更新：2026-11-05。
+自包含的接手资料：架构、命令、构建、数据布局、红线、Git 现状、遗留待办与已定决策。最后更新：2026-11-06。
 接手时读本文件，再跑一次 `git status --short` 与 `git log --oneline -3`。
 
 ## 1. 当前状态
 
-- **唯一开发主线**：`F:\User_Data\Agents\Disk`（下称 A，独立 git 仓库，无 remote）。
-- **同步副本**：`F:\User_Data\Code\Tools\tools\windows-disk-write-tracker`（下称 B）；git 根是 `F:\User_Data\Code\Tools`，remote 为 `github.com/flyer-me/Tools`。
-- **两仓关系**：B 是 A 的整目录副本，源文件字节级一致。同步动作就是把 A 的文件复制过去，没有例外清单。B 额外只保留 2 个仓库适配文件：`tool.manifest.json`（仓库构建声明）与 `Directory.Build.targets`（补齐 `README.txt` 与 `data\`）。
-- 项目：Windows 磁盘累计写入量追踪，.NET 10 / win-x64，自包含多文件发布。
-- 夹具统一使用脱敏序列号 `TESTNVME0001`。
-- 2026-11-05 收尾：两仓交付产物 48 个文件 SHA-256 逐一相同；A 的 `dist\` 旧版 native 残留（含 .NET 8 诊断组件约 7.39 MB）已由构建脚本在 publish 前清空，发布体积 22.7 MB → 21.5 MB。
+- **唯一开发主线**：`F:\User_Data\Code\Tools\tools\windows-disk-write-tracker`（下称 B）；git 根是 `F:\User_Data\Code\Tools`，remote 为 `github.com/flyer-me/Tools`。
+- **已归档副本**：`F:\User_Data\Agents\Disk`（下称 A，独立 git 仓库，无 remote），2026-11-06 起只读。A 的源码曾与 B 逐字节一致且落后 3 个提交，无未迁移代码；禁止在 A 继续开发。
+- **两仓关系**：B 是开发主线，额外保留 2 个仓库适配文件：`tool.manifest.json`（构建声明）与 `Directory.Build.targets`（清理 dist 根目录、补 `README.txt` 与 `data\`）。
+- 项目：Windows 磁盘累计写入量追踪，.NET 10 / win-x64，自包含发布。
+- 测试夹具由 `Core.Tests` 的数据工厂与 `tools\verify.ps1` 运行时生成，统一使用脱敏序列号。
+- 2026-11-06 收尾：代码审查后的六步改造完成（JSONL 改 STJ、删 `--json`、HTML 模板化、菜单重构、测试双层、单文件压缩发布）。
 
 ## 2. 架构
 
 | 项目 | 职责 |
 |---|---|
 | `src\DiskWriteTracker.Core\` | 零 NuGet 依赖（仅 BCL + Win32 P/Invoke）：采集、存储、分析、配置、日志、调度、导出原语 |
-| `src\DiskWriteTracker.Cli\` | 命令分发、交互菜单、报表编排、JSON 载荷 |
+| `src\DiskWriteTracker.Cli\` | 命令分发、交互菜单、报表编排、人读输出 |
+| `src\DiskWriteTracker.Core.Tests\` | xUnit 算法层：日增量边界、JSONL 往返、CSV 转义与编码 |
 
 关键文件（相对 `src\`）：
 
 - `Cli\Program.cs` — 8 动词分发、UTF-8 输出、统一异常出口
-- `Cli\Interactive\{InteractiveMenu,MenuActions,MenuSession,UserSettings,UserSettingsStore}.cs` — 菜单门控、动作、会话快照、偏好与迁移
+- `Cli\Interactive\{InteractiveMenu,MenuActions,MenuSession,UserSettings,UserSettingsStore}.cs` — 菜单门控、动作、会话快照、偏好读写；文案在 `menu-layout.txt`
+- `Cli\ScheduleInvocation.cs` — 卸载参数拼装，CLI 与菜单共用
 - `Cli\Reports\{ReportWriter,ViewBuilder,ExportWriter}.cs` — 报表生成/归档、`WindowStart` 口径唯一定义处、CSV
 - `Core\Collect\{SamplingRunner,DiskProbeService}.cs` — 采样编排与单盘读数
 - `Core\Discovery\DiskEnumerator.cs` — 逐个打开 `\\.\PhysicalDriveN`，走设备 IOCTL
 - `Core\Interop\{NativeMethods,AtaSmart,Nvme,StorageQuery}.cs` — IOCTL 封装；SATA 优先 `IOCTL_STORAGE_PREDICT_FAILURE`，回退 `SMART_RCV_DRIVE_DATA`
-- `Core\Store\{JsonlSampleStore,SampleFile,SampleRecord,FileLock}.cs` — 按日 JSONL、文件名解析入口、数据契约、`.write.lock` 跨进程锁
+- `Core\Store\{JsonlSampleStore,StoreJsonContext,SampleFile,SampleRecord,FileLock}.cs` — 按日 JSONL（STJ 源生成上下文）、文件名解析入口、数据契约、`.write.lock` 跨进程锁
 - `Core\Logging\{EngineLog,LogRetention}.cs` — 极简引擎日志、按天+按体积双阈值回收
 - `Core\Config\{AppConfig,AppConfigLoader,RuntimePaths}.cs` — 9 键配置（与 `config\default.json` 严格 1:1）、数据目录优先级
 - `Core\Analysis\DailyAggregator.cs`、`Core\Units\UnitResolver.cs` — 日增量聚合、磨损一致性闸门
 - `Core\Export\{HtmlReportBuilder,ReportData,CsvExporter,ReportAssets,ReportJsonContext}.cs` — 离线 HTML、内嵌 JSON 契约、CSV、内嵌资源
 - `Core\Scheduling\{ScheduleManager.cs,schedule.ps1}` — 计划任务 install/status/run/uninstall；脚本为内嵌资源，**必须带 UTF-8 BOM**
-- `Cli\{CliJsonContext,JsonPayloads}.cs`、`Cli\Interactive\StartMenuShortcut.cs` — STJ 源生成上下文、具名载荷、COM 晚绑定快捷方式
+- `Cli\Interactive\StartMenuShortcut.cs` — COM 晚绑定快捷方式
 
-内嵌资源：`Scheduling\schedule.ps1`、`Export\Report\report.css|js`、`config\default.json`。只复制 `*.cs` 会漏这些。
+内嵌资源：`Scheduling\schedule.ps1`、`Export\Report\report-template.html|css|js`、
+`Cli\Interactive\menu-layout.txt`、`config\default.json`。只复制 `*.cs` 会漏这些。
 
 ## 3. 命令与退出码
 
 8 个动词：`doctor`、`disks`、`probe`、`sample`、`daily`、`report`、`export`、`schedule`。
-全局参数 `--json`、`--quiet`、`--data-dir <路径>`、`--days N`、`--out`、`--time`、`--dry-run`、`--purge-data`、`--purge-all`。
+全局参数 `--quiet`、`--data-dir <路径>`、`--days N`、`--out`、`--time`、`--dry-run`、`--purge-data`、`--purge-all`。
+用户可见输出为人读文本、HTML 报表、CSV；`schedule.ps1` 与引擎之间用 JSON 交换结构化结果。
 子命令：`daily` 仅 `show`（可省略）、`export` 仅 `csv`、`schedule` 支持 `install|uninstall|run|status`。
 默认值：`daily --days 30`、`report/export --days 90`、`schedule install --time 00:05`。
 `history`、`export --all`、`daily rebuild` 已删除且不再恢复。
@@ -58,7 +62,7 @@
 - A：`powershell -ExecutionPolicy Bypass -File tools\build.ps1` → **114/114**，`dist\` 21.5 MB。publish 前清空 `dist\` 根目录文件，`data\` 保留用户数据。
 - B：`scripts\build-tool.ps1 -ToolId windows-disk-write-tracker` → `scripts\assert-artifacts.ps1 -ToolId ...` → `scripts\package-tool.ps1 -ToolId ... -Version 0.0.0-ci`；仓库另有 `scripts\validate-tools.ps1`。四步全过，包 49 文件 / 9.7 MB。
 - B 的 `tool.manifest.json`：`build.args` 传 `-r win-x64 --self-contained true -o dist`，`runtime.entry` 与 `artifacts` 指向 `dist\`。`Directory.Build.targets` 的 `StageDist` 在 publish 后复制 `tools\dist-assets\README.txt` 并建 `dist\data`。
-- `tools\verify.ps1` 是黑盒断言（静态调用点 94，循环展开后 114）；`tools\verify-manual.md` 是 13 项人工验收清单。
+- `tools\verify.ps1` 是双层门禁：段首调 `dotnet test`（Core.Tests，约 37 个用例），其后约 100 条进程契约断言；数值读 `daily.csv`，doctor / schedule dry-run / 卸载三档解析人读文本。`build.verify` 由 `scripts\build-tool.ps1` 统一调用。
 
 ## 5. 数据布局
 

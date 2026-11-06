@@ -1,4 +1,4 @@
-# DiskWriteTracker
+﻿# DiskWriteTracker
 
 读取硬盘固件上报的**累计写入字节数**，按天记录增量，生成可离线查看的报表。
 
@@ -23,7 +23,7 @@ dist\
 | 角色 | 触发方式 | 行为 |
 |---|---|---|
 | 菜单 | 双击（真终端，无重定向） | 8 项交互菜单，动作在进程内直调 Core |
-| 命令行 | 带参数调用 | 一次一件事，输出结果或 `--json` |
+| 命令行 | 带参数调用 | 一次一件事，输出人读文本或生成 HTML / CSV |
 | 计划任务 | `sample --quiet` | 每天自动采样，无输出 |
 
 无参且输入或输出被重定向时打印帮助并退出，使脚本、管道、计划任务调用直接返回。
@@ -138,7 +138,8 @@ DiskWriteTracker schedule install --time 00:05 [--dry-run]
 DiskWriteTracker schedule uninstall [--purge-data]
 ```
 
-任意命令加 `--json` 输出 `{ok, data}` 结构化结果。`--data-dir <路径>` 可临时指定数据目录。
+`--data-dir <路径>` 可临时指定数据目录。各命令输出人读文本，`report` 生成 HTML，
+`export csv` 生成 CSV；`schedule.ps1` 与引擎之间用 JSON 交换结构化结果。
 
 退出码：`0` 成功 / `1` 无物理磁盘 / `2` 参数错误 / `4` 无数据 / `5` 执行异常 / `7` 计划任务失败。
 
@@ -217,7 +218,7 @@ UAC 被用户取消时捕获 `Win32Exception` 1223，按「已取消」提示并
 | `config\default.json`（exe 旁，可选） | 运维手放 | 存在即**覆盖**内嵌值；缺省时回落到内嵌默认值 |
 | `<数据目录>\config\settings.json` | 菜单自动写 | `reportDays` `exportDays` `time` |
 
-`doctor --json` 的 `config.sourcePath` 会告诉你当前生效的是哪一种：
+`doctor` 的「配置文件」行显示当前生效来源是哪种：
 `embedded:default.json` 表示走内嵌默认值。
 
 `settings.json` 可以手改：`reportDays`/`exportDays` 限 1–3650，`time` 须为 `HH:mm`；
@@ -261,14 +262,15 @@ UAC 被用户取消时捕获 `Win32Exception` 1223，按「已取消」提示并
 ## 验收
 
 ```powershell
-# 自动化：单元测试 + 进程级断言
-dotnet test                                  # 算法层：日增量边界、前驱回读、序列化往返
-tools\verify.ps1                             # 进程契约层：形态、退出码、并发、dry-run
+# 算法层：日增量边界、gapDays、窗口前驱、JSONL 往返、CSV 转义与编码
+dotnet test
+# 进程契约层：段首先调 dotnet test，再验产物形态、退出码、CSV 数值、并发、
+# doctor / schedule dry-run / 卸载三档的人读输出、报表自包含
+tools\verify.ps1
 ```
 
-自动化覆盖：单元测试（日增量四种边界、窗口前驱回读、JSONL 序列化往返、卸载参数拼装）
-与进程断言（产物形态、无参直接返回、命令行契约、报表离线自包含、固定名与归档、
-CSV 编码、8 进程并发写锁、便携目录、计划任务 dry-run、无数据行为）。
+`tools\verify.ps1` 由 manifest 的 `build.verify` 声明，`scripts\build-tool.ps1` 构建后统一调用；
+CI 不单独跑测试。数值断言走 `daily.csv` 的精确字节列，人读输出按稳定中文标签匹配。
 
 ---
 
@@ -323,9 +325,9 @@ src/DiskWriteTracker.Core/
   Collect/                    采样编排（写前可写性校验、保留期剪枝）
   Units/                      单位换算与磨损一致性校验
   Analysis/                   每日增量聚合
-  Store/                      JSONL 样本存储 + 跨进程写锁
-  Export/                     CSV、报表数据契约、内嵌 CSS/JS
-    Report/report.css|js      报表前端（随程序集内嵌）
+  Store/                      JSONL 样本存储（STJ 源生成）+ 跨进程写锁
+  Export/                     CSV、报表数据契约、内嵌模板与 CSS/JS
+    Report/report-template.html|css|js  报表前端（随程序集内嵌）
   Scheduling/                 计划任务管理（内嵌 PowerShell 脚本）
   Config/                     数据目录解析、配置加载（外部优先，内嵌兜底）
   Logging/                    引擎与菜单日志
@@ -333,8 +335,9 @@ src/DiskWriteTracker.Cli/
   Program.cs                  命令行入口与参数解析
   Interactive/                菜单、动作、提权、快捷方式、用户设置
   Reports/                    ViewBuilder / ReportWriter / ExportWriter
+src/DiskWriteTracker.Core.Tests/  xUnit 算法层测试
 tools/
-  verify.ps1                  自动化验收（单元测试 + 进程级断言）
+  verify.ps1                  进程契约断言（段首调 dotnet test）
   bootstrap-sdk.ps1           按需免提权安装 .NET SDK
   dist-assets/README.txt      随产物发给最终用户的说明
 config/default.json           引擎配置（编译进 exe 的默认值来源）
@@ -352,4 +355,4 @@ config/default.json           引擎配置（编译进 exe 的默认值来源）
 | `.cmd` `.bat` | **纯 ASCII** + 无 BOM + CRLF | BOM 会被当成命令的一部分执行 |
 | `.txt` `.md` | UTF-8 带 BOM + CRLF | 记事本友好 |
 
-`.gitattributes` 已钉住换行，`verify.ps1` 第 1 节校验产物仅含允许的扩展名。
+`.gitattributes` 已钉住换行，`verify.ps1` 第 1 节校验产物形态。
