@@ -7,12 +7,8 @@ namespace DiskWriteTracker.Cli.Interactive;
 /// <summary>
 /// 用户偏好的读写。落在数据目录的 config\settings.json，用户可以用记事本直接改。
 ///
-/// 为什么不在 data 根：data 根是"数据"的地盘（samples-*.jsonl、logs\、exports\），
-/// 而 settings.json 是"配置"。混在一层，任何一个清理动作都无法用"删数据、留配置"这一条规则表达，
-/// 只能给单个文件名开特例 —— 特例是漏删和误删的共同来源。
-///
-/// 迁移链：exe\config\launcher.json（最早） → data\settings.json（schemaVersion 1） → data\config\settings.json（2）。
-/// 每一步都是"解析成功才落新址、落址成功才删旧文件"，解析失败一律原样留着当证据。
+/// 不放在 data 根：data 根是"数据"的地盘（samples-*.jsonl、logs\、exports\），
+/// settings.json 是"配置"。混在一层，清理动作就无法用"删数据、留配置"这一条规则表达。
 /// </summary>
 internal static class UserSettingsStore
 {
@@ -28,18 +24,9 @@ internal static class UserSettingsStore
     public static string PathFor(string dataDirectory)
         => Path.Combine(dataDirectory, ConfigDirName, FileName);
 
-    /// <summary>schemaVersion 1 的位置：直接躺在 data 根。</summary>
-    public static string LegacyPathFor(string dataDirectory) => Path.Combine(dataDirectory, FileName);
-
     public static UserSettings Load(string dataDirectory, string? engineDailyTime)
     {
         string path = PathFor(dataDirectory);
-
-        if (!File.Exists(path))
-            MigrateFromDataRoot(dataDirectory);
-
-        if (!File.Exists(path))
-            MigrateFromExeConfig(dataDirectory);
 
         var raw = TryReadWithBackup(path);
         var settings = UserSettings.Normalize(raw ?? UserSettings.Defaults, engineDailyTime);
@@ -76,85 +63,6 @@ internal static class UserSettingsStore
             };
 
             ReportWriter.WriteAtomic(path, payload.ToJsonString(WriteOptions));
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// schemaVersion 1 → 2：把 data\settings.json 搬到 data\config\settings.json。
-    /// 解析成功才搬，搬完读回来确认再删旧文件；顺序反了会在磁盘满或权限异常时丢掉用户偏好。
-    /// </summary>
-    public static bool MigrateFromDataRoot(string dataDirectory)
-    {
-        try
-        {
-            string legacy = LegacyPathFor(dataDirectory);
-            string target = PathFor(dataDirectory);
-
-            if (!File.Exists(legacy) || File.Exists(target))
-                return false;
-
-            var parsed = TryReadFile(legacy);
-            if (parsed is null)
-                return false;
-
-            if (!TrySave(dataDirectory, UserSettings.Normalize(parsed, null)))
-                return false;
-
-            // 读回来确认新文件真的可解析，再删旧文件
-            if (TryReadFile(target) is null)
-                return false;
-
-            try { File.Delete(legacy); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// 更早的版本把偏好放在 exe 同目录的 config\launcher.json。搬到数据目录下的 config\settings.json，
-    /// 成功才删原文件与随之变空的 config 目录（只删空目录，绝不递归）。
-    /// </summary>
-    public static bool MigrateFromExeConfig(string dataDirectory)
-    {
-        try
-        {
-            string legacy = Path.Combine(AppContext.BaseDirectory, "config", "launcher.json");
-            string target = PathFor(dataDirectory);
-
-            if (!File.Exists(legacy) || File.Exists(target))
-                return false;
-
-            var parsed = TryReadFile(legacy);
-            if (parsed is null)
-                return false;
-
-            if (!TrySave(dataDirectory, UserSettings.Normalize(parsed, null)))
-                return false;
-
-            if (TryReadFile(target) is null)
-                return false;
-
-            try { File.Delete(legacy); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-
-            try
-            {
-                string? dir = Path.GetDirectoryName(legacy);
-                if (dir is not null && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
-                    Directory.Delete(dir, recursive: false);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

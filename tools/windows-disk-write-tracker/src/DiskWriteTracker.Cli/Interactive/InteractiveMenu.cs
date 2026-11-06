@@ -1,9 +1,11 @@
+using System.Text;
 using DiskWriteTracker.Core.Logging;
 
 namespace DiskWriteTracker.Cli.Interactive;
 
 /// <summary>
-/// 双击 exe 时的交互菜单。只在真终端里启动：输入或输出任一被重定向时退回打印帮助，
+/// 双击 exe 时的交互菜单。只在真终端里启动：输入或输出任一被重定向时退回打印帮助。
+/// 文案在 menu-layout.txt：前三行 banner，其余每行 "key|label"。
 /// </summary>
 internal static class InteractiveMenu
 {
@@ -15,6 +17,20 @@ internal static class InteractiveMenu
         Environment.UserInteractive
         && !Console.IsInputRedirected
         && !Console.IsOutputRedirected;
+
+    /// <summary>key 到动作的绑定。模板里的 key 必须在此出现，启动时校验。</summary>
+    private static readonly Dictionary<string, Func<MenuSession, int>> Actions = new()
+    {
+        ["1"] = MenuActions.SampleAndReport,
+        ["2"] = session => MenuActions.ShowReport(session),
+        ["3"] = MenuActions.ExportCsv,
+        ["4"] = MenuActions.InstallTask,
+        ["5"] = MenuActions.UninstallTask,
+        ["6"] = MenuActions.OpenDataDirectory,
+        ["7"] = MenuActions.ShowLogs,
+    };
+
+    private static readonly (string[] Banner, (string Key, string Label)[] Items) Layout = LoadLayout();
 
     public static int Run()
     {
@@ -48,44 +64,17 @@ internal static class InteractiveMenu
 
             ConsoleUi.Line();
 
-            switch (value)
+            if (value == "0")
+                return 0;
+
+            if (Actions.TryGetValue(value, out var action))
             {
-                case "1":
-                    Invoke(session, MenuActions.SampleAndReport);
-                    break;
-
-                case "2":
-                    Invoke(session, s => MenuActions.ShowReport(s));
-                    break;
-
-                case "3":
-                    Invoke(session, MenuActions.ExportCsv);
-                    break;
-
-                case "4":
-                    Invoke(session, MenuActions.InstallTask);
-                    break;
-
-                case "5":
-                    Invoke(session, MenuActions.UninstallTask);
-                    break;
-
-                case "6":
-                    Invoke(session, MenuActions.OpenDataDirectory);
-                    break;
-
-                case "7":
-                    Invoke(session, MenuActions.ShowLogs);
-                    break;
-
-                case "0":
-                    return 0;
-
-                default:
-                    ConsoleUi.Warn("  请输入 0 到 7 之间的数字。");
-                    Thread.Sleep(700);
-                    break;
+                Invoke(session, action);
+                continue;
             }
+
+            ConsoleUi.Warn($"  请输入 0 到 {Layout.Items.Length - 1} 之间的数字。");
+            Thread.Sleep(700);
         }
     }
 
@@ -112,9 +101,9 @@ internal static class InteractiveMenu
     {
         ConsoleUi.Clear();
 
-        ConsoleUi.Accent("==============================================================");
-        ConsoleUi.Accent("  DiskWriteTracker   硬盘写入量记录");
-        ConsoleUi.Accent("==============================================================");
+        foreach (string line in Layout.Banner)
+            ConsoleUi.Accent(line);
+
         ConsoleUi.Line();
 
         string mode = session.IsPortable ? "便携" : "系统目录";
@@ -146,14 +135,41 @@ internal static class InteractiveMenu
 
     private static void DrawItems()
     {
-        ConsoleUi.Info("  1  立即采样并刷新报表");
-        ConsoleUi.Info("  2  只看报表（不采样）");
-        ConsoleUi.Info("  3  导出 CSV");
-        ConsoleUi.Info("  4  安装 / 更新每日计划任务");
-        ConsoleUi.Info("  5  卸载计划任务");
-        ConsoleUi.Info("  6  打开数据目录");
-        ConsoleUi.Info("  7  查看日志");
-        ConsoleUi.Info("  0  退出");
+        foreach (var (key, label) in Layout.Items)
+            ConsoleUi.Info($"  {key}  {label}");
+
         ConsoleUi.Line();
+    }
+
+    private static (string[] Banner, (string Key, string Label)[] Items) LoadLayout()
+    {
+        var assembly = typeof(InteractiveMenu).Assembly;
+        using var stream = assembly.GetManifestResourceStream("menu-layout.txt")
+            ?? throw new InvalidOperationException("缺少内嵌菜单模板 menu-layout.txt");
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+
+        var lines = reader.ReadToEnd()
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (lines.Length < 4)
+            throw new InvalidOperationException("菜单模板至少需要 3 行 banner 加 1 行菜单项");
+
+        var banner = lines[..3];
+        var items = lines[3..]
+            .Select(line => line.Split('|', 2))
+            .Select(p => (Key: p[0].Trim(), Label: p.Length > 1 ? p[1].Trim() : string.Empty))
+            .ToArray();
+
+        // 模板与动作字典的对齐问题在启动时暴露，不能等用户按键后才发现缺项
+        var missing = items
+            .Where(i => i.Key != "0" && !Actions.ContainsKey(i.Key))
+            .Select(i => i.Key)
+            .ToArray();
+
+        if (missing.Length > 0)
+            throw new InvalidOperationException("菜单模板里的 key 没有对应动作: " + string.Join(", ", missing));
+
+        return (banner, items);
     }
 }

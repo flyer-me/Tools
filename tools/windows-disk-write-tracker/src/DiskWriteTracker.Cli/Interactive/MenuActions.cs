@@ -138,30 +138,12 @@ internal static class MenuActions
         }
 
         var watch = Stopwatch.StartNew();
-        bool ok;
-        string? error = null;
         string exe = Program.ResolveSelfPath();
 
-        if (session.IsElevated)
-        {
-            var result = ScheduleManager.Invoke(
-                "-Action", "install",
-                "-ExePath", exe,
-                "-TaskName", ScheduleManager.DefaultTaskName,
-                "-Time", time);
-
-            ok = result.Ok;
-            error = result.Error ?? result.RawJson;
-        }
-        else
-        {
-            var elevated = Elevation.RunSelf($"schedule install --time {time}");
-            ok = elevated.Ok;
-            error = elevated.Error;
-
-            if (!ok)
-                PrintElevationFallback(exe, $"schedule install --time {time}", elevated);
-        }
+        var (ok, error) = RunPrivileged(
+            session,
+            ["-Action", "install", "-ExePath", exe, "-TaskName", ScheduleManager.DefaultTaskName, "-Time", time],
+            $"schedule install --time {time}");
 
         watch.Stop();
         session.RefreshTaskStatus();
@@ -209,52 +191,18 @@ internal static class MenuActions
             _ => "none"
         };
 
-        string arguments = mode switch
-        {
-            "all" => "schedule uninstall --purge-all",
-            "data" => "schedule uninstall --purge-data",
-            _ => "schedule uninstall"
-        };
-
         var watch = Stopwatch.StartNew();
-        bool ok;
-        string? error = null;
-        string exe = Program.ResolveSelfPath();
 
-        if (session.IsElevated)
-        {
-            // 开关参数只在打开时传：`-PurgeData:$false` 在 -File 调用下会绑定失败
-            var args = new List<string>
-            {
-                "-Action", "uninstall",
-                "-TaskName", ScheduleManager.DefaultTaskName
-            };
-
-            if (mode == "all") args.Add("-PurgeAll");
-            else if (mode == "data") args.Add("-PurgeData");
-
-            args.Add("-DataDirectory");
-            args.Add(session.DataDirectory);
-
-            var result = ScheduleManager.Invoke([.. args]);
-
-            ok = result.Ok;
-            error = result.Error ?? result.RawJson;
-        }
-        else
-        {
-            var elevated = Elevation.RunSelf(arguments);
-            ok = elevated.Ok;
-            error = elevated.Error;
-
-            if (!ok)
-                PrintElevationFallback(exe, arguments, elevated);
-        }
+        var (ok, error) = RunPrivileged(
+            session,
+            ScheduleInvocation.BuildUninstallPsArgs(session.DataDirectory, mode, dryRun: false),
+            ScheduleInvocation.BuildUninstallCliArguments(mode, dryRun: false));
 
         watch.Stop();
         session.RefreshTaskStatus();
         session.RefreshSampleStats();
 
+        string arguments = ScheduleInvocation.BuildUninstallCliArguments(mode, dryRun: false);
         EngineLog.Action(session.DataDirectory, "menu/5 " + arguments, ok ? 0 : 7, watch.Elapsed.TotalMilliseconds, null, error);
 
         if (!ok)
@@ -365,6 +313,25 @@ internal static class MenuActions
         {
             return [];
         }
+    }
+
+    /// <summary>
+    /// 需要管理员的操作统一入口：已提权时直调 schedule.ps1，未提权时自我提权按命令行参数重跑。
+    /// </summary>
+    private static (bool Ok, string? Error) RunPrivileged(MenuSession session, string[] psArgs, string cliArguments)
+    {
+        if (session.IsElevated)
+        {
+            var result = ScheduleManager.Invoke(psArgs);
+            return (result.Ok, result.Error ?? result.RawJson);
+        }
+
+        var elevated = Elevation.RunSelf(cliArguments);
+        if (elevated.Ok)
+            return (true, null);
+
+        PrintElevationFallback(Program.ResolveSelfPath(), cliArguments, elevated);
+        return (false, elevated.Error);
     }
 
     /// <summary>提权失败时的兜底：给两条能直接复制到管理员终端的命令。</summary>

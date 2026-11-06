@@ -87,33 +87,17 @@ dist\
 它是本地与 CI 共享的唯一构建分派入口；manifest 声明了 `build.verify` 后，
 构建成功会自动执行 `tools\verify.ps1` 的验收断言（非零退出码即失败）。
 
-`tools\` 下的脚本是本工具的自定义构建与验收资产，本地可直接使用：
-`build.ps1`（构建 + 发布 + 冒烟 + 验收）、`verify.ps1`（只跑验收，不动产物）、
-`bootstrap-sdk.ps1` + `dotnet-install.ps1`（无全局 SDK 的本机环境按需安装）。
-它们不参与发布管道——发布只走根分派器加 verify 门禁。
+`tools\` 下的脚本是本工具的自定义构建与验收资产：
+`verify.ps1`（验收断言）、`bootstrap-sdk.ps1` + `dotnet-install.ps1`
+（无全局 SDK 的本机环境按需安装）。它们不参与发布管道——发布只走根分派器加 verify 门禁。
 
 ```powershell
 # 已有可用 SDK 就跳过；没有才免提权装到当前用户目录
 powershell -ExecutionPolicy Bypass -File tools\bootstrap-sdk.ps1
-
-# 编译 + 发布 + 冒烟 + 验收
-powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
 目标框架 `net10.0-windows` / `win-x64`，`global.json` 钉 SDK `10.0.403`。
-`tools\build.ps1` 通过 `Resolve-Dotnet` 逐个试候选 `dotnet --version`，选出满足
-`global.json` 的解释器；系统安装的那份优先，用户目录那份仅作兜底。
-
-发布参数：`PublishSingleFile=false`、`PublishTrimmed=true`、`PublishReadyToRun=false`、
-`SatelliteResourceLanguages=en;zh-Hans`；`SelfContained` 与 `RuntimeIdentifier` 由
-`build.ps1` 命令行提供。产物为多文件自包含布局，约 22.7 MiB。
-
-发布采用覆盖式：`dist\data` 保留，上一版遗留的 `DiskWriteTracker.cmd`、`launcher\`、
-`config\` 按名清理；产物根目录须包含 `exe` / `README.txt` / `data` 三项，
-其余文件按扩展名白名单 `.exe` / `.dll` / `.json` / `.txt` 校验。
-
-旧版 `config\launcher.json` 在构建时一步迁移到 `data\config\settings.json`，
-迁移失败直接中止构建，避免丢失用户偏好。
+发布属性固化在 `DiskWriteTracker.Cli.csproj`，裸 `dotnet publish -c Release -o dist` 即产出交付物。
 
 ---
 
@@ -277,20 +261,14 @@ UAC 被用户取消时捕获 `Win32Exception` 1223，按「已取消」提示并
 ## 验收
 
 ```powershell
-# 自动化：114 项断言
-tools\build.ps1            # 构建 + 发布 + 冒烟 + verify，全绿才算通过
-tools\verify.ps1           # 只跑验收，不动产物
-
-# 人工：13 项，需真终端与人工确认
-tools\verify-manual.md
+# 自动化：单元测试 + 进程级断言
+dotnet test                                  # 算法层：日增量边界、前驱回读、序列化往返
+tools\verify.ps1                             # 进程契约层：形态、退出码、并发、dry-run
 ```
 
-自动化覆盖：产物形态、无参直接返回、命令行契约、日增量四种边界、报表离线自包含、
-固定名与归档、CSV 编码、8 进程并发写锁、便携目录、计划任务 dry-run、无数据行为。
-
-人工覆盖：双击进菜单、UAC 提权装任务、到点自动采样、卸载确认词、报表页面交互、
-整目录搬移、标准用户降级提示。UAC 提权需真机执行一次并记录结果，
-清单见 `tools\verify-manual.md`。
+自动化覆盖：单元测试（日增量四种边界、窗口前驱回读、JSONL 序列化往返、卸载参数拼装）
+与进程断言（产物形态、无参直接返回、命令行契约、报表离线自包含、固定名与归档、
+CSV 编码、8 进程并发写锁、便携目录、计划任务 dry-run、无数据行为）。
 
 ---
 
@@ -356,13 +334,10 @@ src/DiskWriteTracker.Cli/
   Interactive/                菜单、动作、提权、快捷方式、用户设置
   Reports/                    ViewBuilder / ReportWriter / ExportWriter
 tools/
-  build.ps1                   构建 + 发布 + 扩展名白名单校验 + 冒烟 + 验收
-  verify.ps1                  自动化验收（114 项）
-  verify-manual.md            人工验收清单（13 项）
+  verify.ps1                  自动化验收（单元测试 + 进程级断言）
   bootstrap-sdk.ps1           按需免提权安装 .NET SDK
   dist-assets/README.txt      随产物发给最终用户的说明
 config/default.json           引擎配置（编译进 exe 的默认值来源）
-tests/fixtures/data/          多日测试样本（含基线/正常/回退/缺日四种边界）
 ```
 
 ---

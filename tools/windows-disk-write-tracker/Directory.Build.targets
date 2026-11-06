@@ -1,8 +1,7 @@
 <Project>
 
   <!-- 仓库构建入口是裸 dotnet publish -c Release，参数在 tool.manifest.json 的 build.args。
-       publish 只产出运行时文件；README.txt 与空 data\ 由这里补齐，
-       使 dist\ 与 tools\build.ps1 的交付形态一致。 -->
+       publish 只产出运行时文件；README.txt 与空 data\ 由这里补齐。 -->
   <Target Name="StageDist" AfterTargets="Publish"
           Condition="'$(Configuration)' == 'Release' and '$(MSBuildProjectName)' == 'DiskWriteTracker.Cli'">
     <PropertyGroup>

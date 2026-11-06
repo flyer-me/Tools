@@ -26,4 +26,9 @@
     <ProjectReference Include="..\DiskWriteTracker.Core\DiskWriteTracker.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 菜单文案模板：banner + 菜单项，与 InteractiveMenu 的动作字典按 key 对齐 -->
+    <EmbeddedResource Include="Interactive\menu-layout.txt" LogicalName="menu-layout.txt" />
+  </ItemGroup>
+
 </Project>

@@ -359,32 +359,15 @@ internal static class Program
         return 0;
     }
 
-    /// <summary>
-    /// 卸载参数用增量方式拼。开关参数只能在"打开"时出现：
-    /// 用 -File 调用脚本时，`-PurgeData:$false` 会被当成一个字符串塞给 SwitchParameter，
-    /// 直接参数绑定失败 —— 而这条路径只有真的去卸载时才会走到，平时测不出来。
-    /// </summary>
+    /// <summary>purge 档位与开关拼装见 <see cref="ScheduleInvocation"/>。</summary>
     private static ScheduleResult InvokeUninstall(CommandOptions options)
     {
-        var args = new List<string>
-        {
-            "-Action", "uninstall",
-            "-TaskName", ScheduleManager.DefaultTaskName
-        };
+        string mode = options.Has("purge-all") ? "all"
+            : options.Has("purge-data") ? "data"
+            : "none";
 
-        // --purge-all 覆盖 --purge-data，两个都给时按更彻底的那个算
-        if (options.Has("purge-all"))
-            args.Add("-PurgeAll");
-        else if (options.Has("purge-data"))
-            args.Add("-PurgeData");
-
-        if (options.Has("dry-run"))
-            args.Add("-DryRun");
-
-        args.Add("-DataDirectory");
-        args.Add(RuntimePaths.ResolveDataDirectory(DataDirOverride).Directory);
-
-        return ScheduleManager.Invoke([.. args]);
+        return ScheduleManager.Invoke(ScheduleInvocation.BuildUninstallPsArgs(
+            RuntimePaths.ResolveDataDirectory(DataDirOverride).Directory, mode, options.Has("dry-run")));
     }
 
     private static void PrintScheduleHuman(string sub, string rawJson)
