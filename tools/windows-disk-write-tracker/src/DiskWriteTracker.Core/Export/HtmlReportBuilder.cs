@@ -6,9 +6,9 @@ using System.Text.Unicode;
 namespace DiskWriteTracker.Core.Export;
 
 /// <summary>
-/// 生成自包含 HTML 报表。
-/// C# 只负责骨架、样式、脚本与内嵌数据；卡片、图表、排序筛选全部由内联 JS 在浏览器里完成。
-/// 整个文件不含任何 http 字面量，禁止外部引用（无 CDN、无字体、无图片），断网可直接打开。
+/// 自包含 HTML 报表。骨架在 report-template.html，这里只负责填动态值：
+/// 头部元信息、noscript 降级视图、内嵌 JSON。卡片、图表、筛选排序由内联 JS
+/// 在浏览器里完成。整个文件不含 http 字面量，断网可直接打开。
 /// </summary>
 public static class HtmlReportBuilder
 {
@@ -25,29 +25,16 @@ public static class HtmlReportBuilder
 
     public static string Build(ReportData data)
     {
-        var sb = new StringBuilder(48 * 1024);
-
-        sb.Append("<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n");
-        sb.Append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n");
-        sb.Append("<title>硬盘写入量报表</title>\n<style>\n").Append(ReportAssets.Css).Append("\n</style>\n</head>\n<body>\n<div class=\"wrap\">\n");
-
-        AppendHeader(sb, data);
-        sb.Append("<div id=\"stale\" class=\"stale\" hidden></div>\n");
-
-        sb.Append("<noscript>\n");
-        AppendStaticReport(sb, data);
-        sb.Append("</noscript>\n");
-
-        AppendAppShell(sb);
-
-        sb.Append("<script id=\"dwt-data\" type=\"application/json\">");
-        sb.Append(SerializeData(data));
-        sb.Append("</script>\n");
-
-        sb.Append("<script>\n").Append(ReportAssets.Js).Append("\n</script>\n");
-        sb.Append("</div>\n</body>\n</html>\n");
-
-        return sb.ToString();
+        // DATA 最后填：它承载任意用户字符串，先填其他占位符可避免其内容被再次扫描
+        return ReportAssets.Template
+            .Replace("{{CSS}}", ReportAssets.Css, StringComparison.Ordinal)
+            .Replace("{{JS}}", ReportAssets.Js, StringComparison.Ordinal)
+            .Replace("{{STATIC_REPORT}}", BuildStaticReport(data), StringComparison.Ordinal)
+            .Replace("{{RANGE_LABEL}}", E(data.Range.Label))
+            .Replace("{{GENERATED_AT}}", E(data.GeneratedAt))
+            .Replace("{{LAST_DATE}}", E(string.IsNullOrEmpty(data.DataQuality.LastDate) ? "—" : data.DataQuality.LastDate))
+            .Replace("{{DATA_DIRECTORY}}", E(data.DataDirectory))
+            .Replace("{{DATA}}", SerializeData(data), StringComparison.Ordinal);
     }
 
     /// <summary>质量标记的中文标签，供 CSV 导出与命令行共用。</summary>
@@ -69,71 +56,10 @@ public static class HtmlReportBuilder
         return json.Replace("<", "\\u003C", StringComparison.Ordinal);
     }
 
-    private static void AppendHeader(StringBuilder sb, ReportData data)
+    /// <summary>禁用 JS 时的降级视图：汇总卡片和完整明细表，不做筛选与排序。</summary>
+    private static string BuildStaticReport(ReportData data)
     {
-        sb.Append("<header class=\"hd\">\n<h1>硬盘写入量报表</h1>\n<p class=\"sub\">");
-        sb.Append("区间 ").Append(E(data.Range.Label));
-        sb.Append(" ｜ 生成于 ").Append(E(data.GeneratedAt));
-        sb.Append(" ｜ 数据截止 ").Append(E(string.IsNullOrEmpty(data.DataQuality.LastDate) ? "—" : data.DataQuality.LastDate));
-        sb.Append(" ｜ 数据目录 ").Append(E(data.DataDirectory));
-        sb.Append("</p>\n</header>\n");
-    }
-
-    private static void AppendAppShell(StringBuilder sb)
-    {
-        sb.Append("<div id=\"app\" hidden>\n");
-
-        sb.Append("<section class=\"bar\">\n");
-        sb.Append("<div class=\"grp\" id=\"diskFilter\"><span class=\"lbl\">磁盘</span></div>\n");
-        sb.Append("<div class=\"grp\"><span class=\"lbl\">日期</span>");
-        sb.Append("<input type=\"date\" id=\"from\"><span class=\"dash\">至</span><input type=\"date\" id=\"to\"></div>\n");
-        sb.Append("<div class=\"grp\" id=\"qualityFilter\"><span class=\"lbl\">质量</span></div>\n");
-        sb.Append("<div class=\"grp right\">");
-        sb.Append("<button id=\"btnCsv\" class=\"btn\" type=\"button\">导出当前视图 CSV</button>");
-        sb.Append("<button id=\"btnReset\" class=\"btn ghost\" type=\"button\">重置</button>");
-        sb.Append("</div>\n</section>\n");
-
-        sb.Append("<section class=\"cards\" id=\"cards\"></section>\n");
-        sb.Append("<section class=\"diskstrip\" id=\"diskstrip\"></section>\n");
-
-        sb.Append("<section>\n<div class=\"sechead\"><h2>每日写入增量</h2>");
-        sb.Append("<div class=\"seg\" id=\"modeSeg\">");
-        sb.Append("<button type=\"button\" data-mode=\"bar\" class=\"on\">柱状</button>");
-        sb.Append("<button type=\"button\" data-mode=\"line\">折线</button>");
-        sb.Append("</div></div>\n");
-        sb.Append("<figure class=\"chart\"><div id=\"chart\"></div>");
-        sb.Append("<div id=\"tip\" class=\"tip\" hidden></div>");
-        sb.Append("<div id=\"legend\" class=\"legend\"></div>");
-        sb.Append("<figcaption id=\"cap\"></figcaption></figure>\n</section>\n");
-
-        sb.Append("<section>\n<div class=\"sechead\"><h2>每日明细</h2><span class=\"hint\" id=\"rowHint\"></span></div>\n");
-        sb.Append("<div class=\"tablewrap\"><table class=\"tbl\" id=\"tbl\"><thead><tr>");
-        AppendHead(sb, "d", "日期", false);
-        AppendHead(sb, "model", "磁盘", false);
-        AppendHead(sb, "x", "日增量", true);
-        AppendHead(sb, "s", "起始累计", true);
-        AppendHead(sb, "e", "结束累计", true);
-        AppendHead(sb, "m", "方法", false);
-        AppendHead(sb, "q", "数据质量", false);
-        AppendHead(sb, "note", "备注", false);
-        sb.Append("</tr></thead><tbody></tbody></table></div>\n");
-        sb.Append("<div class=\"pager\" id=\"pager\" hidden></div>\n</section>\n");
-
-        sb.Append("<section id=\"dq\"></section>\n");
-        sb.Append("<footer>DiskWriteTracker ｜ 数据来自硬盘固件计数器，本地生成，不上传任何信息</footer>\n");
-        sb.Append("</div>\n");
-    }
-
-    private static void AppendHead(StringBuilder sb, string col, string label, bool numeric)
-    {
-        sb.Append("<th data-col=\"").Append(col).Append('"');
-        if (numeric) sb.Append(" class=\"num\"");
-        sb.Append('>').Append(E(label)).Append("<span class=\"rank\"></span><span class=\"ar\">↕</span></th>");
-    }
-
-    /// <summary>禁用 JS 时的降级视图：同样有汇总卡片和完整明细表，不做筛选与排序。</summary>
-    private static void AppendStaticReport(StringBuilder sb, ReportData data)
-    {
+        var sb = new StringBuilder(16 * 1024);
         sb.Append("<section class=\"cards\">\n");
 
         var cards = new (string Label, string Value, string Note)[]
@@ -158,7 +84,7 @@ public static class HtmlReportBuilder
         {
             sb.Append("<div class=\"emptybox\">所选区间内没有可用的日统计记录。请先运行采样，或放宽日期范围。</div>\n");
             sb.Append("<p class=\"qnote\">当前浏览器禁用了 JavaScript，这里显示的是静态视图，无法使用筛选与排序。</p>\n");
-            return;
+            return sb.ToString();
         }
 
         var diskName = data.Disks.ToDictionary(d => d.Key, d => d.Model, StringComparer.Ordinal);
@@ -185,6 +111,7 @@ public static class HtmlReportBuilder
         sb.Append("</tbody></table></div>\n</section>\n");
 
         sb.Append("<p class=\"qnote\">当前浏览器禁用了 JavaScript，这里显示的是静态视图，无法使用筛选与排序。</p>\n");
+        return sb.ToString();
     }
 
     private static string MethodLabel(string method) => method switch

@@ -11,6 +11,8 @@ internal static class ReportAssets
 
     public static string Js { get; } = Load("report.js");
 
+    public static string Template { get; } = Load("report-template.html");
+
     private static string Load(string logicalName)
     {
         var stream = typeof(ReportAssets).Assembly.GetManifestResourceStream(logicalName)

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>硬盘写入量报表</title>
+<style>
+{{CSS}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hd">
+<h1>硬盘写入量报表</h1>
+<p class="sub">区间 {{RANGE_LABEL}} ｜ 生成于 {{GENERATED_AT}} ｜ 数据截止 {{LAST_DATE}} ｜ 数据目录 {{DATA_DIRECTORY}}</p>
+</header>
+<div id="stale" class="stale" hidden></div>
+<noscript>
+{{STATIC_REPORT}}
+</noscript>
+<div id="app" hidden>
+<section class="bar">
+<div class="grp" id="diskFilter"><span class="lbl">磁盘</span></div>
+<div class="grp"><span class="lbl">日期</span><input type="date" id="from"><span class="dash">至</span><input type="date" id="to"></div>
+<div class="grp" id="qualityFilter"><span class="lbl">质量</span></div>
+<div class="grp right"><button id="btnCsv" class="btn" type="button">导出当前视图 CSV</button><button id="btnReset" class="btn ghost" type="button">重置</button></div>
+</section>
+<section class="cards" id="cards"></section>
+<section class="diskstrip" id="diskstrip"></section>
+<section>
+<div class="sechead"><h2>每日写入增量</h2><div class="seg" id="modeSeg"><button type="button" data-mode="bar" class="on">柱状</button><button type="button" data-mode="line">折线</button></div></div>
+<figure class="chart"><div id="chart"></div><div id="tip" class="tip" hidden></div><div id="legend" class="legend"></div><figcaption id="cap"></figcaption></figure>
+</section>
+<section>
+<div class="sechead"><h2>每日明细</h2><span class="hint" id="rowHint"></span></div>
+<div class="tablewrap"><table class="tbl" id="tbl"><thead><tr><th data-col="d">日期<span class="rank"></span><span class="ar">↕</span></th><th data-col="model">磁盘<span class="rank"></span><span class="ar">↕</span></th><th data-col="x" class="num">日增量<span class="rank"></span><span class="ar">↕</span></th><th data-col="s" class="num">起始累计<span class="rank"></span><span class="ar">↕</span></th><th data-col="e" class="num">结束累计<span class="rank"></span><span class="ar">↕</span></th><th data-col="m">方法<span class="rank"></span><span class="ar">↕</span></th><th data-col="q">数据质量<span class="rank"></span><span class="ar">↕</span></th><th data-col="note">备注<span class="rank"></span><span class="ar">↕</span></th></tr></thead><tbody></tbody></table></div>
+<div class="pager" id="pager" hidden></div>
+</section>
+<section id="dq"></section>
+<footer>DiskWriteTracker ｜ 数据来自硬盘固件计数器，本地生成，不上传任何信息</footer>
+</div>
+<script id="dwt-data" type="application/json">{{DATA}}</script>
+<script>
+{{JS}}
+</script>
+</div>
+</body>
+</html>
